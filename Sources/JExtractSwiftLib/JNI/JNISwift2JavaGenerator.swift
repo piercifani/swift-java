@@ -44,6 +44,9 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
 
   var thunkNameRegistry = ThunkNameRegistry()
 
+  /// Jextracted types that already have a minimal JavaKit class wrapper printed for closures.
+  var printedMinimalJavaClassWrappers: Set<String> = []
+
   /// Accumulates every ``@_cdecl`` symbol name emitted during thunk printing.
   /// Written to a linker version script after generation when
   /// ``Configuration/linkerExportListOutput`` is set.

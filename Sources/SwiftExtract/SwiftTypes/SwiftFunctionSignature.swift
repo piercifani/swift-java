@@ -392,8 +392,14 @@ extension SwiftFunctionSignature {
     self.thrownTypedError = accessorEffects?.thrownTypedError
 
     if isSet {
+      // A closure stored in a variable is always escaping, so its setter's `newValue` is too.
+      var newValueType = valueType
+      if case .function(var functionType) = valueType {
+        functionType.isEscaping = true
+        newValueType = .function(functionType)
+      }
       self.parameters = [
-        SwiftParameter(convention: .byValue, parameterName: "newValue", type: valueType)
+        SwiftParameter(convention: .byValue, parameterName: "newValue", type: newValueType)
       ]
       self.result = .void
     } else {

@@ -379,38 +379,39 @@ extension SwiftType {
       self = .inlineArray(count: count, element: elementType)
 
     case .attributedType(let attributedType):
-      // Recognize "@convention(c)", "@convention(swift)", and "@escaping" attributes on function types.
-      // FIXME: This string matching is a horrible hack.
-      let attrs = attributedType.attributes.trimmedDescription
-
-      // Handle @escaping attribute
-      if attrs.contains("@escaping") {
-        let innerType = try SwiftType(attributedType.baseType, lookupContext: lookupContext)
-        switch innerType {
-        case .function(var functionType):
-          functionType.isEscaping = true
-          self = .function(functionType)
-        default:
+      // Recognize the attributes jextract understands on function types:
+      // `@escaping`, `@Sendable`, `@MainActor`, and `@convention(c|swift)`.
+      guard case .function(var functionType) = try SwiftType(attributedType.baseType, lookupContext: lookupContext)
+      else {
+        throw TypeTranslationError.unimplementedType(type)
+      }
+      var hasUnknownAttribute = false
+      for element in attributedType.attributes {
+        guard let attribute = element.as(AttributeSyntax.self) else {
           throw TypeTranslationError.unimplementedType(type)
         }
-      } else {
-        // Handle @convention attributes
-        switch attrs {
-        case "@convention(c)", "@convention(swift)":
-          let innerType = try SwiftType(attributedType.baseType, lookupContext: lookupContext)
-          switch innerType {
-          case .function(var functionType):
-            let isConventionC = attrs == "@convention(c)"
-            let convention: SwiftFunctionType.Convention = isConventionC ? .c : .swift
-            functionType.convention = convention
-            self = .function(functionType)
-          default:
-            throw TypeTranslationError.unimplementedType(type)
+        switch attribute.attributeName.trimmedDescription {
+        case "escaping":
+          functionType.isEscaping = true
+        case "Sendable":
+          functionType.isSendable = true
+        case "MainActor", "_Concurrency.MainActor":
+          functionType.isMainActorIsolated = true
+        case "convention":
+          switch attribute.arguments?.trimmedDescription {
+          case "c": functionType.convention = .c
+          case "swift": functionType.convention = .swift
+          default: throw TypeTranslationError.unimplementedType(type)
           }
         default:
-          throw TypeTranslationError.unimplementedType(type)
+          hasUnknownAttribute = true
         }
       }
+      // Other attributes were previously tolerated next to `@escaping`; keep that behavior.
+      if hasUnknownAttribute && !functionType.isEscaping {
+        throw TypeTranslationError.unimplementedType(type)
+      }
+      self = .function(functionType)
 
     case .functionType(let functionType):
       self = .function(
