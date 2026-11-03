@@ -73,3 +73,20 @@ public func nestedStringArray(array: [[String]]) -> [[String]] {
 public func nestedLongArray(array: [[Int64]]) -> [[Int64]] {
   array
 }
+
+// Elements converted one by one: optionals, dictionaries and sets
+public func optionalLongArray(array: [Int64?]) -> [Int64?] {
+  array
+}
+
+public func optionalObjectArray(array: [MySwiftClass?]) -> [MySwiftClass?] {
+  array
+}
+
+public func dictionaryArray() -> [[String: Int64]] {
+  [["a": 1], ["b": 2, "c": 3]]
+}
+
+public func setArray() -> [Set<String>] {
+  [["a", "b"], ["c"]]
+}

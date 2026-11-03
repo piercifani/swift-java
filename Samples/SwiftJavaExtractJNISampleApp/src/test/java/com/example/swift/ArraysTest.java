@@ -17,6 +17,7 @@ package com.example.swift;
 import org.junit.jupiter.api.Test;
 import org.swift.swiftkit.core.SwiftArena;
 
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -183,5 +184,40 @@ public class ArraysTest {
         assertArrayEquals(new String[] {}, result[0]);
         assertArrayEquals(new String[] { "a" }, result[1]);
         assertArrayEquals(new String[] {}, result[2]);
+    }
+
+    @Test
+    void optionalLongArray() {
+        @SuppressWarnings("unchecked")
+        Optional<Long>[] input = new Optional[] { Optional.of(1L), Optional.empty(), Optional.of(3L) };
+        assertArrayEquals(input, MySwiftLibrary.optionalLongArray(input));
+    }
+
+    @Test
+    void optionalObjectArray() {
+        try (var arena = SwiftArena.ofConfined()) {
+            @SuppressWarnings("unchecked")
+            Optional<MySwiftClass>[] input = new Optional[] { Optional.of(MySwiftClass.init(7, 8, arena)), Optional.empty() };
+            Optional<MySwiftClass>[] result = MySwiftLibrary.optionalObjectArray(input);
+            assertEquals(2, result.length);
+            assertEquals(7, result[0].orElseThrow().getX());
+            assertTrue(result[1].isEmpty());
+        }
+    }
+
+    @Test
+    void dictionaryArray() {
+        var result = MySwiftLibrary.dictionaryArray();
+        assertEquals(2, result.length);
+        assertEquals(1L, result[0].get("a"));
+        assertEquals(3L, result[1].get("c"));
+    }
+
+    @Test
+    void setArray() {
+        var result = MySwiftLibrary.setArray();
+        assertEquals(2, result.length);
+        assertTrue(result[0].contains("b"));
+        assertEquals(1, result[1].size());
     }
 }

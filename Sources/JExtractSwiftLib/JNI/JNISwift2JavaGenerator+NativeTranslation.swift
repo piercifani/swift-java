@@ -992,6 +992,19 @@ extension JNISwift2JavaGenerator {
           outParameters: []
         )
 
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        // Optionals, dictionaries and sets are converted element by element with their bridges.
+        let arrayBridge = try bridgeTypeName(for: knownTypes.arraySugar(elementType))
+        return NativeResult(
+          javaType: .array(.javaLangObject),
+          conversion: .method(
+            .constant(arrayBridge),
+            function: "toJavaObject",
+            arguments: [(nil, .placeholder), ("in", .constant("environment"))]
+          ),
+          outParameters: []
+        )
+
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
@@ -1070,6 +1083,21 @@ extension JNISwift2JavaGenerator {
             JavaParameter(name: parameterName, type: .array(innerJavaType))
           ],
           conversion: .initFromJNI(.placeholder, swiftType: knownTypes.arraySugar(elementType)),
+          indirectConversion: nil,
+          conversionCheck: nil
+        )
+
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        let arrayBridge = try bridgeTypeName(for: knownTypes.arraySugar(elementType))
+        return NativeParameter(
+          parameters: [
+            JavaParameter(name: parameterName, type: .array(.javaLangObject))
+          ],
+          conversion: .method(
+            .constant(arrayBridge),
+            function: "fromJavaObject",
+            arguments: [(nil, .placeholder), ("in", .constant("environment"))]
+          ),
           indirectConversion: nil,
           conversionCheck: nil
         )
@@ -2158,6 +2186,16 @@ extension JNISwift2JavaGenerator {
       case .check32BitIntOverflow(let minMaxSource):
         return "\(placeholder) >= \(minMaxSource).min && \(placeholder) <= \(minMaxSource).max"
       }
+    }
+  }
+}
+
+extension SwiftNominalType {
+  /// Array elements converted with `ArrayBridge` rather than to a primitive or pointer array.
+  var isBridgedArrayElement: Bool {
+    switch nominalTypeDecl.knownTypeKind {
+    case .optional, .dictionary, .set: true
+    default: false
     }
   }
 }

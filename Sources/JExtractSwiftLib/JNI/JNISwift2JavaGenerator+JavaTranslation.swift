@@ -1480,6 +1480,17 @@ extension JNISwift2JavaGenerator {
           conversion: .requireNonNull(.placeholder, message: "\(parameterName) must not be null")
         )
 
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        let javaType = try bridgedArrayElementJavaType(
+          elementType,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        return TranslatedParameter(
+          parameter: JavaParameter(name: parameterName, type: .array(javaType), annotations: parameterAnnotations),
+          conversion: .requireNonNull(.placeholder, message: "\(parameterName) must not be null")
+        )
+
       case .nominal(let nominalType):
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
           guard let javaType = JNIJavaTypeTranslator.translate(knownType: knownType, config: self.config) else {
@@ -1554,6 +1565,21 @@ extension JNISwift2JavaGenerator {
           conversion: .placeholder
         )
 
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        let javaType = try bridgedArrayElementJavaType(
+          elementType,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        // The native method returns the array `ArrayBridge` created, whose static type is `Object[]`.
+        return TranslatedResult(
+          javaType: .array(javaType),
+          nativeJavaType: .array(.javaLangObject),
+          annotations: annotations,
+          outParameters: [],
+          conversion: .cast(.placeholder, .array(javaType))
+        )
+
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
@@ -1614,6 +1640,28 @@ extension JNISwift2JavaGenerator {
       default:
         throw JavaTranslationError.unsupportedSwiftType(elementType)
       }
+    }
+
+    /// The Java type of an element converted by `ArrayBridge`. Its `OptionalBridge` always creates a
+    /// `java.util.Optional`, also for primitives (`Optional<Long>`, not `OptionalLong`).
+    func bridgedArrayElementJavaType(
+      _ swiftType: SwiftType,
+      genericParameters: [SwiftGenericParameterDeclaration],
+      genericRequirements: [SwiftGenericRequirement],
+    ) throws -> JavaType {
+      if case .nominal(let nominalType) = swiftType, case .optional(let wrapped) = nominalType.asKnownType {
+        let wrappedJavaType = try bridgedArrayElementJavaType(
+          wrapped,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        return .optional(wrappedJavaType.boxedType)
+      }
+      return try translateGenericTypeParameter(
+        swiftType,
+        genericParameters: genericParameters,
+        genericRequirements: genericRequirements,
+      )
     }
 
     func javaTypeForDictionaryComponent(
@@ -1988,6 +2036,9 @@ extension JNISwift2JavaGenerator {
 
     indirect case requireNonNull(JavaNativeConversionStep, message: String)
 
+    /// `(type) inner`
+    indirect case cast(JavaNativeConversionStep, JavaType)
+
     /// Constructs a TupleN from out-parameter arrays.
     /// E.g. `new Tuple2<>(result_0$[0], result_1$[0])`
     case tupleFromOutParams(tupleClassName: String, elements: [(outParamName: String, elementConversion: JavaNativeConversionStep)])
@@ -2154,6 +2205,9 @@ extension JNISwift2JavaGenerator {
         let inner = inner.render(&printer, placeholder)
         return #"Objects.requireNonNull(\#(inner), "\#(message)")"#
 
+      case .cast(let inner, let type):
+        return "(\(type)) \(inner.render(&printer, placeholder))"
+
       case .tupleFromOutParams(let tupleClassName, let elements):
         var args: [String] = []
         for element in elements {
@@ -2227,7 +2281,7 @@ extension JNISwift2JavaGenerator {
       case .print(let inner):
         return inner.requiresSwiftArena
 
-      case .requireNonNull(let inner, _):
+      case .requireNonNull(let inner, _), .cast(let inner, _):
         return inner.requiresSwiftArena
 
       case .tupleFromOutParams(_, let elements):
