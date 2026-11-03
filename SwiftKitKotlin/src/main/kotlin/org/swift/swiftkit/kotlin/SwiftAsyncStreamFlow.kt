@@ -21,8 +21,9 @@ import kotlinx.coroutines.flow.callbackFlow
 import org.swift.swiftkit.core.SwiftAsyncStream
 
 /**
- * A Swift `AsyncStream` as a cold [Flow]. Collecting it subscribes to the stream, so like the
- * stream it can be collected once; cancelling the collector cancels the Swift task iterating it.
+ * A Swift `AsyncStream` or `AsyncThrowingStream` as a cold [Flow]. Collecting it subscribes to the
+ * stream, so like the stream it can be collected once; cancelling the collector cancels the Swift
+ * task iterating it. An error thrown by the stream is thrown by `collect`.
  *
  * When the collector falls behind, the Swift task waits for buffer space before its next element.
  */
@@ -34,6 +35,10 @@ fun <T> SwiftAsyncStream<T>.asFlow(): Flow<T> = callbackFlow {
 
         override fun onComplete() {
             close()
+        }
+
+        override fun onError(error: Throwable) {
+            close(error)
         }
     })
     awaitClose { subscription.cancel() }

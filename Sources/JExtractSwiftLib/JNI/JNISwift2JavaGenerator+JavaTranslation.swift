@@ -218,7 +218,7 @@ extension JNISwift2JavaGenerator {
       // Name.
       let javaName = javaIdentifiers.makeJavaMethodName(decl)
 
-      // A function returning `AsyncStream<T>` is translated as returning `T`, then converted to a stream.
+      // A function returning `AsyncStream<T>` or `AsyncThrowingStream<T, _>` is translated as returning `T`, then converted to a stream.
       var resultSignature = decl.functionSignature
       let streamElementType = Self.asyncStreamElementType(decl.functionSignature.result.type)
       if let streamElementType {
@@ -716,12 +716,17 @@ extension JNISwift2JavaGenerator {
       )
     }
 
-    /// The element type of an `AsyncStream<Element>`, or nil.
+    /// The element type of an `AsyncStream<Element>` or `AsyncThrowingStream<Element, Failure>`, or nil.
     static func asyncStreamElementType(_ type: SwiftType) -> SwiftType? {
-      guard case .nominal(let nominal) = type, case .asyncStream(let element) = nominal.asKnownType else {
+      guard case .nominal(let nominal) = type else {
         return nil
       }
-      return element
+      switch nominal.asKnownType {
+      case .asyncStream(let element), .asyncThrowingStream(let element):
+        return element
+      default:
+        return nil
+      }
     }
 
     /// Turns a function translated as returning `T` into one returning a `SwiftAsyncStream<T>`: Java

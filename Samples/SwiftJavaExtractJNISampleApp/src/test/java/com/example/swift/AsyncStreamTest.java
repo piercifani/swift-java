@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -57,6 +58,34 @@ public class AsyncStreamTest {
             assertEquals(2, squares.size());
             assertEquals(4.0, squares.get(1).area());
         }
+    }
+
+    @Test
+    void throwingStreamDeliversItsError() throws Exception {
+        List<Long> values = Collections.synchronizedList(new ArrayList<>());
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        MySwiftLibrary.interruptedCountdown(3, 2).subscribe(new SwiftAsyncStream.Subscriber<Long>() {
+            @Override
+            public void onNext(Long value) {
+                values.add(value);
+            }
+
+            @Override
+            public void onComplete() {
+                done.countDown();
+            }
+
+            @Override
+            public void onError(Throwable failure) {
+                error.set(failure);
+                done.countDown();
+            }
+        });
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        assertEquals(List.of(3L, 2L), values);
+        assertNotNull(error.get());
+        assertEquals("interrupted", error.get().getMessage());
     }
 
     @Test

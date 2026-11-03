@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 /**
- * A Swift {@code AsyncStream} returned to Java.
+ * A Swift {@code AsyncStream} or {@code AsyncThrowingStream} returned to Java.
  * <p>
  * {@link #subscribe(Subscriber)} starts a Swift task that iterates the stream and delivers each
  * element to the subscriber, without blocking a Java thread. An {@code AsyncStream} has a single
@@ -34,6 +34,12 @@ public final class SwiftAsyncStream<T> {
 
         /** The stream finished (it is not called when the subscription is cancelled). */
         default void onComplete() {}
+
+        /**
+         * A throwing stream failed with {@code error}, instead of finishing. It is not called when the
+         * subscription is cancelled.
+         */
+        default void onError(Throwable error) {}
     }
 
     /** Cancels the Swift task iterating the stream; elements stop arriving. */
@@ -79,7 +85,8 @@ public final class SwiftAsyncStream<T> {
         if (handle == 0) {
             throw new IllegalStateException("A Swift AsyncStream can only be subscribed to once");
         }
-        Delivery delivery = new Delivery(value -> subscriber.onNext(mapper.apply(value)), subscriber::onComplete);
+        Delivery delivery =
+            new Delivery(value -> subscriber.onNext(mapper.apply(value)), subscriber::onComplete, subscriber::onError);
         delivery.started($subscribe(handle, delivery));
         return delivery::cancel;
     }
@@ -88,12 +95,14 @@ public final class SwiftAsyncStream<T> {
     private static final class Delivery {
         private final java.util.function.Consumer<Object> next;
         private final Runnable complete;
+        private final java.util.function.Consumer<Throwable> error;
         private final AtomicLong task = new AtomicLong(0);
         private final AtomicBoolean finished = new AtomicBoolean(false);
 
-        Delivery(java.util.function.Consumer<Object> next, Runnable complete) {
+        Delivery(java.util.function.Consumer<Object> next, Runnable complete, java.util.function.Consumer<Throwable> error) {
             this.next = next;
             this.complete = complete;
+            this.error = error;
         }
 
         void next(Object value) {
@@ -106,6 +115,13 @@ public final class SwiftAsyncStream<T> {
                 if (completed) {
                     complete.run();
                 }
+            }
+        }
+
+        void fail(Throwable failure) {
+            if (finished.compareAndSet(false, true)) {
+                release();
+                error.accept(failure);
             }
         }
 

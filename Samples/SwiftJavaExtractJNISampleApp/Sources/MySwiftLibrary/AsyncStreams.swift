@@ -30,3 +30,17 @@ public func shapes(count: Int64) -> AsyncStream<Square> {
     continuation.finish()
   }
 }
+
+public struct CountdownInterrupted: Error, CustomStringConvertible {
+  public var description: String { "interrupted" }
+}
+
+/// `AsyncThrowingStream` results too; an error thrown by the stream reaches `onError`.
+public func interruptedCountdown(from start: Int64, failingAt failure: Int64) -> AsyncThrowingStream<Int64, Error> {
+  AsyncThrowingStream { continuation in
+    for value in stride(from: start, through: failure, by: -1) {
+      continuation.yield(value)
+    }
+    continuation.finish(throwing: CountdownInterrupted())
+  }
+}

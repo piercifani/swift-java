@@ -18,7 +18,7 @@ import SwiftExtract
 import SwiftJavaConfigurationShared
 import Testing
 
-/// Functions returning `AsyncStream<T>` return a `SwiftAsyncStream<T>` to Java.
+/// Functions returning `AsyncStream<T>` or `AsyncThrowingStream<T, _>` return a `SwiftAsyncStream<T>` to Java.
 @Suite
 struct JNIAsyncStreamTests {
   @Test
@@ -57,6 +57,30 @@ struct JNIAsyncStreamTests {
         return SwiftJavaRuntimeSupport._JNIBoxedConversions.box(element$.getJNILocalRefValue(in: environment), in: environment)
         }
         """
+      ]
+    )
+  }
+
+  @Test(arguments: ["Error", "any Error"])
+  func throwingStreamsAreAttachedLikeStreams(failure: String) throws {
+    let input = "public func ticks(count: Int64) -> AsyncThrowingStream<Int64, \(failure)> { fatalError() }"
+    try assertOutput(
+      input: input,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "public static org.swift.swiftkit.core.SwiftAsyncStream<java.lang.Long> ticks(long count) {",
+        "private static native void $ticks(long count, org.swift.swiftkit.core.SwiftAsyncStream<java.lang.Long> result_stream);",
+      ]
+    )
+    try assertOutput(
+      input: input,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "SwiftJavaRuntimeSupport._attachAsyncStream(SwiftModule.ticks(count: Int64(fromJNI: count, in: environment)), to: result_stream, environment: environment) { element$, environment in"
       ]
     )
   }

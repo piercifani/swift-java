@@ -28,6 +28,9 @@ class JavaSwiftAsyncStreamDelivery: JavaObject {
 
   @JavaMethod
   func finish(_ completed: Bool)
+
+  @JavaMethod
+  func fail(_ failure: Throwable?)
 }
 
 /// A Swift `AsyncStream` handed to Java, waiting for its single subscriber.
@@ -51,22 +54,62 @@ public func _attachAsyncStream<Element>(
   environment: JNIEnvironment,
   convert: @escaping @Sendable (Element, JNIEnvironment) -> jobject?
 ) {
-  guard let javaStream else { return }
   nonisolated(unsafe) let stream = stream
+  attachSource(to: javaStream, environment: environment, convert: convert) { deliver in
+    for await element in stream {
+      deliver(element)
+    }
+  }
+}
+
+/// Attaches a throwing stream like the `AsyncStream` overload; an error it throws is delivered to
+/// the subscriber's `onError`.
+public func _attachAsyncStream<Element, Failure: Error>(
+  _ stream: AsyncThrowingStream<Element, Failure>,
+  to javaStream: jobject?,
+  environment: JNIEnvironment,
+  convert: @escaping @Sendable (Element, JNIEnvironment) -> jobject?
+) {
+  nonisolated(unsafe) let stream = stream
+  attachSource(to: javaStream, environment: environment, convert: convert) { deliver in
+    for try await element in stream {
+      deliver(element)
+    }
+  }
+}
+
+private func attachSource<Element>(
+  to javaStream: jobject?,
+  environment: JNIEnvironment,
+  convert: @escaping @Sendable (Element, JNIEnvironment) -> jobject?,
+  iterate: @escaping @Sendable (_ deliver: (Element) -> Void) async throws -> Void
+) {
+  guard let javaStream else { return }
   let source = SwiftAsyncStreamSource { delivery in
     nonisolated(unsafe) let delivery = delivery
     return Task {
-      for await element in stream {
-        let environment = try! JavaVirtualMachine.shared().environment()
-        let value = convert(element, environment)
-        JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
-          .next(value.map { JavaObject(javaThis: $0, environment: environment) })
-        if let value {
-          environment.interface.DeleteLocalRef(environment, value)
+      var failure: (any Error)?
+      do {
+        try await iterate { element in
+          let environment = try! JavaVirtualMachine.shared().environment()
+          let value = convert(element, environment)
+          JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
+            .next(value.map { JavaObject(javaThis: $0, environment: environment) })
+          if let value {
+            environment.interface.DeleteLocalRef(environment, value)
+          }
         }
+      } catch {
+        failure = error
       }
       let environment = try! JavaVirtualMachine.shared().environment()
-      JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment).finish(!Task.isCancelled)
+      let javaDelivery = JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
+      if let failure, !Task.isCancelled, let throwable = environment.makeJavaThrowable(for: failure) {
+        javaDelivery.fail(Throwable(javaThis: throwable, environment: environment))
+        environment.interface.DeleteLocalRef(environment, throwable)
+      } else {
+        javaDelivery.finish(!Task.isCancelled)
+      }
       environment.interface.DeleteGlobalRef(environment, delivery)
     }
   }

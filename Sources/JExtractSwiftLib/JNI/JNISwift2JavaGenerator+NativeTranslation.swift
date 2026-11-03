@@ -1427,7 +1427,7 @@ extension JNISwift2JavaGenerator {
 
     indirect case unwrapOptional(NativeSwiftConversionStep, name: String, fatalErrorMessage: String)
 
-    /// Attaches the `AsyncStream` returned by the call to the Java `SwiftAsyncStream` passed in as
+    /// Attaches the `AsyncStream` (or `AsyncThrowingStream`) returned by the call to the Java `SwiftAsyncStream` passed in as
     /// `result_stream`, converting each element with `elementConversion` when it is delivered.
     indirect case attachAsyncStream(elementConversion: NativeSwiftConversionStep, elementJavaType: JavaType)
 
