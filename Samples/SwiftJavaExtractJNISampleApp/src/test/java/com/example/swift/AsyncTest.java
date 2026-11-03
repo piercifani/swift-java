@@ -87,4 +87,20 @@ public class AsyncTest {
         Future<String> future = MySwiftLibrary.asyncString("hey");
         assertEquals("hey", future.get());
     }
+
+    @Test
+    void cancellingTheFutureCancelsTheSwiftTask() throws Exception {
+        try (var arena = SwiftArena.ofConfined()) {
+            CancellableWork work = CancellableWork.init(arena);
+            var future = work.waitUntilCancelled();
+            Thread.sleep(100);
+            assertTrue(future.cancel(true));
+
+            long deadline = System.currentTimeMillis() + 5_000;
+            while (!work.wasCancelled() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20);
+            }
+            assertTrue(work.wasCancelled());
+        }
+    }
 }

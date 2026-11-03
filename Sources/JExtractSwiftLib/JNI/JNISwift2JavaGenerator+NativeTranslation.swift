@@ -1434,7 +1434,8 @@ extension JNISwift2JavaGenerator {
       nativeFunctionSignature: NativeFunctionSignature,
       isThrowing: Bool,
       completeMethodID: String,
-      completeExceptionallyMethodID: String
+      completeExceptionallyMethodID: String,
+      cancelsTaskWithFuture: Bool
     )
 
     /// `{ (args) -> return body }`
@@ -1933,7 +1934,8 @@ extension JNISwift2JavaGenerator {
         let nativeFunctionSignature,
         let isThrowing,
         let completeMethodID,
-        let completeExceptionallyMethodID
+        let completeExceptionallyMethodID,
+        let cancelsTaskWithFuture
       ):
         var globalRefs: [String] = ["globalFuture"]
 
@@ -2063,6 +2065,16 @@ extension JNISwift2JavaGenerator {
             // We can be on any thread, so we need to attach the thread.
             printer.print("var environment = try! JavaVirtualMachine.shared().environment()")
             printTaskBody(printer: &printer)
+          }
+        }
+
+        if cancelsTaskWithFuture {
+          // Cancelling the Java future cancels the task. Registered with the call's own (local)
+          // reference, which stays valid even if an immediate task already finished.
+          printer.printIfBlock("let task") { printer in
+            printer.print(
+              "SwiftJavaRuntimeSupport._cancelTaskWhenFutureIsCancelled(result_future, task: task, environment: environment)"
+            )
           }
         }
 

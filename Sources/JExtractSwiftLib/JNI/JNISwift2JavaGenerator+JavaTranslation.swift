@@ -727,21 +727,29 @@ extension JNISwift2JavaGenerator {
       )
 
       let result = translatedFunctionSignature.result
+      let convertedFuture = JavaNativeConversionStep.method(
+        .constant("future$"),
+        function: "thenApply",
+        arguments: [
+          .lambda(
+            args: ["futureResult$"],
+            body: .replacingPlaceholder(result.conversion, placeholder: "futureResult$")
+          )
+        ]
+      )
       translatedFunctionSignature.result = TranslatedResult(
         javaType: translatedFutureType,
         nativeJavaType: .void,
         annotations: result.annotations,
         outParameters: result.outParameters + [futureOutParameter],
-        conversion: .method(
-          .constant("future$"),
-          function: "thenApply",
-          arguments: [
-            .lambda(
-              args: ["futureResult$"],
-              body: .replacingPlaceholder(result.conversion, placeholder: "futureResult$")
-            )
-          ]
-        )
+        // Cancelling the returned (derived) future must reach `future$`, which the Swift task watches.
+        conversion: mode == .completableFuture
+          ? .method(
+            .constant("org.swift.swiftkit.core.CompletableFutureCancellation"),
+            function: "forwardCancellation",
+            arguments: [convertedFuture, .constant("future$")]
+          )
+          : convertedFuture
       )
 
       // Update native function
@@ -751,6 +759,7 @@ extension JNISwift2JavaGenerator {
         isThrowing: originalFunctionSignature.isThrowing || originalFunctionSignature.isImplicitlyThrowing,
         completeMethodID: completeMethodID,
         completeExceptionallyMethodID: completeExceptionallyMethodID,
+        cancelsTaskWithFuture: mode == .completableFuture,
       )
       nativeFunctionSignature.result.javaType = .void
       nativeFunctionSignature.result.outParameters.append(.init(name: "result_future", type: nativeFutureType))

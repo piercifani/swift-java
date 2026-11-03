@@ -37,10 +37,10 @@ struct JNIAsyncTests {
         public static java.util.concurrent.CompletableFuture<java.lang.Void> asyncVoid() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           SwiftModule.$asyncVoid(future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -89,6 +89,9 @@ struct JNIAsyncTests {
               _ = environment.interface.CallBooleanMethodA(environment, globalFuture, _JNIMethodIDCache.CompletableFuture.complete, [jvalue(l: nil)])
             }
           }
+          if let task {
+            SwiftJavaRuntimeSupport._cancelTaskWhenFutureIsCancelled(result_future, task: task, environment: environment)
+          }
         }
         """
       ]
@@ -113,10 +116,10 @@ struct JNIAsyncTests {
         public static java.util.concurrent.CompletableFuture<java.lang.Void> async() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           SwiftModule.$async(future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -179,6 +182,9 @@ struct JNIAsyncTests {
               }
             }
           }
+          if let task {
+            SwiftJavaRuntimeSupport._cancelTaskWhenFutureIsCancelled(result_future, task: task, environment: environment)
+          }
         }
         """
       ]
@@ -203,10 +209,10 @@ struct JNIAsyncTests {
         public static java.util.concurrent.CompletableFuture<java.lang.Long> async(long i) {
           java.util.concurrent.CompletableFuture<java.lang.Long> future$ = new java.util.concurrent.CompletableFuture<java.lang.Long>();
           SwiftModule.$async(i, future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -257,6 +263,9 @@ struct JNIAsyncTests {
               _ = environment.interface.CallBooleanMethodA(environment, globalFuture, _JNIMethodIDCache.CompletableFuture.complete, [jvalue(l: boxedResult$)])
             }
           }
+          if let task {
+            SwiftJavaRuntimeSupport._cancelTaskWhenFutureIsCancelled(result_future, task: task, environment: environment)
+          }
           return
         }
         """
@@ -286,10 +295,10 @@ struct JNIAsyncTests {
         public static java.util.concurrent.CompletableFuture<MyClass> async(MyClass c, SwiftArena swiftArena) {
           java.util.concurrent.CompletableFuture<java.lang.Long> future$ = new java.util.concurrent.CompletableFuture<java.lang.Long>();
           SwiftModule.$async(c.$memoryAddress(), future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return MyClass.wrapMemoryAddressUnsafe(futureResult$, swiftArena);
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -356,6 +365,9 @@ struct JNIAsyncTests {
               _ = environment.interface.CallBooleanMethodA(environment, globalFuture, _JNIMethodIDCache.CompletableFuture.complete, [jvalue(l: boxedResult$)])
             }
           }
+          if let task {
+            SwiftJavaRuntimeSupport._cancelTaskWhenFutureIsCancelled(result_future, task: task, environment: environment)
+          }
           return
         }
         """
@@ -377,10 +389,10 @@ struct JNIAsyncTests {
         public static java.util.concurrent.CompletableFuture<java.lang.String> async(java.lang.String s) {
           java.util.concurrent.CompletableFuture<java.lang.String> future$ = new java.util.concurrent.CompletableFuture<java.lang.String>();
           SwiftModule.$async(s, future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
