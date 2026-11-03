@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import CodePrinting
 import JExtractSwiftLib
 import SwiftExtract
 import SwiftJavaConfigurationShared
@@ -98,5 +99,58 @@ struct JNIDefaultArgumentsTests {
       expectedChunks: ["public static void f(long a, long b) {"],
       notExpectedChunks: ["public static void f(long a) {", "public static void f() {"]
     )
+  }
+
+  let callbacks = """
+    public struct Callbacks {
+      public init(onOpen: @escaping (Int64) -> Void = { _ in }, onClose: @escaping () -> Void = {}) {}
+    }
+    public func run(times: Int64, onDone: @escaping () -> Void = {}) {}
+    """
+
+  /// An initializer's result may take a `SwiftArena`, which a Kotlin lambda converts to, so
+  /// `init(onOpen, SwiftArena)` would be ambiguous with `init(onOpen, onClose)`.
+  @Test
+  func closureOverloadsThatWouldBeAmbiguousWithAnArena() throws {
+    var config = Configuration()
+    config.swiftModule = "SwiftModule"
+    let translator = makeSwiftJavaAnalyzer(config: config)
+    try translator.analyze(path: "/fake/Fake.swiftinterface", text: callbacks)
+    var analysis = translator.result
+    analysis.expandDefaultArgumentOverloads()
+    let initializers = try #require(analysis.extractedTypes.values.first?.initializers)
+    #expect(initializers.map(\.functionSignature.parameters.count) == [2, 0])
+    // No arena for a `Void` result, so every overload is kept.
+    #expect(analysis.extractedGlobalFuncs.map(\.functionSignature.parameters.count) == [2, 1])
+  }
+
+  @Test
+  func overloadsShareClosureWrappers() throws {
+    try assertOutput(
+      input: callbacks,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["public struct JavaSwiftModule_run_onDone"]
+    )
+    var config = Configuration()
+    config.swiftModule = "SwiftModule"
+    let translator = makeSwiftJavaAnalyzer(config: config)
+    try translator.analyze(path: "/fake/Fake.swiftinterface", text: callbacks)
+    let generator = JNISwift2JavaGenerator(
+      config: config,
+      translator: translator,
+      javaPackage: "com.example.swift",
+      swiftOutputDirectory: "/fake",
+      javaOutputDirectory: "/fake",
+      javaClassLookupTable: [:],
+      moduleJavaPackages: [:]
+    )
+    var swiftPrinter = SwiftPrinter(mode: .accumulateAll)
+    try generator.writeSwiftThunkSources(&swiftPrinter)
+    var javaPrinter = JavaPrinter(mode: .accumulateAll)
+    try generator.writeExportedJavaSources(&javaPrinter)
+    #expect(swiftPrinter.contents.components(separatedBy: "public struct JavaSwiftModule_run_onDone").count == 2)
+    #expect(javaPrinter.contents.components(separatedBy: "public static class run").count == 2)
   }
 }
