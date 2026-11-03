@@ -275,6 +275,29 @@ extension JNISwift2JavaGenerator {
         )
       }
 
+      // Kotlin's view of the declaration's own parameters and result, after every conversion above.
+      let resultIsNullable =
+        config.effectiveOptionalsAsNullable && Self.isOptional(decl.functionSignature.result.type)
+        && !(decl.functionSignature.isAsync || decl.functionSignature.isIsolated || decl.functionSignature.isImplicitlyAsync)
+      if let annotation = nullabilityAnnotation(translatedFunctionSignature.result.javaType, nullable: resultIsNullable) {
+        translatedFunctionSignature.result.annotations.append(annotation)
+      }
+      for (idx, parameter) in decl.functionSignature.parameters.enumerated() {
+        let nullable = config.effectiveOptionalsAsNullable && Self.isOptional(parameter.type)
+        let translated = translatedFunctionSignature.parameters[idx]
+        let javaType = translated.parameter.type
+        if !javaType.isPrimitive, let annotation = nullabilityAnnotation(javaType.javaType, nullable: nullable) {
+          translatedFunctionSignature.parameters[idx] = TranslatedParameter(
+            parameter: JavaParameter(
+              name: translated.parameter.name,
+              type: javaType,
+              annotations: translated.parameter.annotations + [annotation]
+            ),
+            conversion: translated.conversion
+          )
+        }
+      }
+
       var thrownJavaType: JavaType?
       if case .nominal(let thrown) = decl.functionSignature.thrownTypedError,
         self.errorTypes.contains(thrown.nominalTypeDecl.identity)
@@ -844,6 +867,14 @@ extension JNISwift2JavaGenerator {
         ),
         conversion: .placeholder,
       )
+    }
+
+    /// The configured `nullableAnnotation` or `nonNullAnnotation` for a reference type.
+    func nullabilityAnnotation(_ javaType: JavaType, nullable: Bool) -> JavaAnnotation? {
+      if javaType.isPrimitive {
+        return nil
+      }
+      return (nullable ? config.nullableAnnotation : config.nonNullAnnotation).map { JavaAnnotation(className: $0) }
     }
 
     static func isOptional(_ type: SwiftType) -> Bool {

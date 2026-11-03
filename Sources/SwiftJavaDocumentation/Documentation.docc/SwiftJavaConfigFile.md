@@ -257,6 +257,28 @@ Only supported in `jni` mode.
 
 ---
 
+#### nullableAnnotation
+
+- **Type:** `String?`
+
+Fully qualified name of a Java annotation marking parameters and results that can be `null`, such as
+`androidx.annotation.Nullable` or `org.jetbrains.annotations.Nullable`, so Kotlin sees nullable types
+instead of platform types. Applied to optionals with `optionalsAsNullable`. It must be applicable to
+methods and parameters: type-use only annotations, such as JSpecify's, aren't supported. Only supported
+in `jni` mode.
+
+---
+
+#### nonNullAnnotation
+
+- **Type:** `String?`
+
+Fully qualified name of a Java annotation marking parameters and results that are never `null`, such as
+`androidx.annotation.NonNull` or `org.jetbrains.annotations.NotNull`, so Kotlin sees non-null types instead
+of platform types. Applied to the other reference types. Same requirements as `nullableAnnotation`.
+
+---
+
 #### generatedJavaSourcesListFileOutput
 
 - **Type:** `String?`

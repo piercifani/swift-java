@@ -189,6 +189,18 @@ public struct Configuration: Codable {
     optionalsAsNullable ?? false
   }
 
+  /// Fully qualified name of a Java annotation marking parameters and results that can be `null`, such as
+  /// `androidx.annotation.Nullable` or `org.jetbrains.annotations.Nullable`, so Kotlin sees nullable types
+  /// instead of platform types. Applied to optionals with `optionalsAsNullable`. It must be applicable to
+  /// methods and parameters: type-use only annotations, such as JSpecify's, aren't supported. Only supported
+  /// in `jni` mode.
+  public var nullableAnnotation: String?
+
+  /// Fully qualified name of a Java annotation marking parameters and results that are never `null`, such as
+  /// `androidx.annotation.NonNull` or `org.jetbrains.annotations.NotNull`, so Kotlin sees non-null types instead
+  /// of platform types. Applied to the other reference types. Same requirements as `nullableAnnotation`.
+  public var nonNullAnnotation: String?
+
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
   public var generatedJavaSourcesListFileOutput: String?
 

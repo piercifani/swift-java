@@ -584,6 +584,10 @@ extension JNISwift2JavaGenerator {
     for i in JNISwift2JavaGenerator.defaultJavaImports {
       printer.print("import \(i);")
     }
+    // A single-type import wins over `org.swift.swiftkit.core.annotations.*`.
+    for annotation in [config.nullableAnnotation, config.nonNullAnnotation].compactMap({ $0 }) {
+      printer.print("import \(annotation);")
+    }
     printer.print("")
   }
 
