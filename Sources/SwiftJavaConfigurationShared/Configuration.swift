@@ -181,6 +181,14 @@ public struct Configuration: Codable {
     enableJavaCallbacks ?? false
   }
 
+  /// If true, Swift enums whose cases have no associated values are generated as Java `enum`s,
+  /// with one constant per case, instead of classes wrapping a Swift value. Only supported in
+  /// `jni` mode.
+  public var payloadlessEnumsAsJavaEnums: Bool?
+  public var effectivePayloadlessEnumsAsJavaEnums: Bool {
+    payloadlessEnumsAsJavaEnums ?? false
+  }
+
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
   public var generatedJavaSourcesListFileOutput: String?
 
