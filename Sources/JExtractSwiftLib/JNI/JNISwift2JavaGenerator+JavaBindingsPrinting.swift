@@ -313,7 +313,7 @@ extension JNISwift2JavaGenerator {
   private func printConcreteType(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
     printNominal(&printer, decl) { printer in
       if self.isJavaEnum(decl) {
-        printer.print(decl.cases.map { $0.name.uppercased() }.joined(separator: ", ") + ";")
+        printer.print(decl.cases.map { Self.javaEnumConstantName($0) }.joined(separator: ", ") + ";")
         printer.println()
       }
       printer.print(
@@ -636,6 +636,12 @@ extension JNISwift2JavaGenerator {
 
   /// Whether `decl` is printed as a Java `enum` (`payloadlessEnumsAsJavaEnums`): a non-generic,
   /// non-error Swift enum whose cases have no associated values.
+  /// The Swift case name, as Swift and Kotlin code spell the case; a Java keyword gets a trailing `_`.
+  static func javaEnumConstantName(_ enumCase: ExtractedEnumCase) -> String {
+    let name = enumCase.name.trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+    return JavaIdentifierFactory.javaKeywords.contains(name) ? name + "_" : name
+  }
+
   func isJavaEnum(_ decl: ExtractedNominalType) -> Bool {
     config.effectivePayloadlessEnumsAsJavaEnums && decl.swiftNominal.kind == .enum && !decl.swiftNominal.isGeneric
       && !decl.cases.isEmpty && decl.cases.allSatisfy(\.parameters.isEmpty) && !self.isSwiftErrorType(decl)

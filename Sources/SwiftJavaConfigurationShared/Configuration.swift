@@ -182,7 +182,7 @@ public struct Configuration: Codable {
   }
 
   /// If true, Swift enums whose cases have no associated values are generated as Java `enum`s,
-  /// with one constant per case, instead of classes wrapping a Swift value. Only supported in
+  /// with one constant per case named like the case, instead of classes wrapping a Swift value. Only supported in
   /// `jni` mode.
   public var payloadlessEnumsAsJavaEnums: Bool?
   public var effectivePayloadlessEnumsAsJavaEnums: Bool {
