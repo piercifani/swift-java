@@ -352,6 +352,53 @@ extension SwiftFunctionSignature {
     return (parameters, effectSpecifiers, thrownTypedError)
   }
 
+  /// The type of an unannotated variable, when its initializer makes it unambiguous without type
+  /// checking: a literal (`42`, `-1`, `1.5`, `"text"`, `true`), or an initializer call `T(...)` /
+  /// `A.B(...)` whose callee resolves to a nominal type. Anything else, such as `T.member` or
+  /// `makeValue()`, still needs an explicit annotation.
+  static func inferredType(of expr: ExprSyntax, lookupContext: SwiftTypeLookupContext) -> SwiftType? {
+    let knownTypes = SwiftKnownTypes(symbolTable: lookupContext.symbolTable)
+    if expr.is(IntegerLiteralExprSyntax.self) {
+      return knownTypes.int
+    }
+    if let prefix = expr.as(PrefixOperatorExprSyntax.self), prefix.operator.text == "-",
+      prefix.expression.is(IntegerLiteralExprSyntax.self)
+    {
+      return knownTypes.int
+    }
+    if expr.is(FloatLiteralExprSyntax.self) {
+      return knownTypes.double
+    }
+    if expr.is(StringLiteralExprSyntax.self) {
+      return knownTypes.string
+    }
+    if expr.is(BooleanLiteralExprSyntax.self) {
+      return knownTypes.bool
+    }
+    if let call = expr.as(FunctionCallExprSyntax.self),
+      let typeSyntax = typeSyntax(naming: call.calledExpression),
+      let type = try? SwiftType(typeSyntax, lookupContext: lookupContext),
+      case .nominal = type, !type.isUnresolvedTypePlaceholder
+    {
+      return type
+    }
+    return nil
+  }
+
+  /// `Foo` or `A.B` written as an expression, as a type.
+  private static func typeSyntax(naming expr: ExprSyntax) -> TypeSyntax? {
+    if let reference = expr.as(DeclReferenceExprSyntax.self), reference.argumentNames == nil {
+      return TypeSyntax(IdentifierTypeSyntax(name: reference.baseName.trimmed))
+    }
+    if let member = expr.as(MemberAccessExprSyntax.self), let base = member.base,
+      member.declName.argumentNames == nil,
+      let baseType = typeSyntax(naming: base)
+    {
+      return TypeSyntax(MemberTypeSyntax(baseType: baseType, name: member.declName.baseName.trimmed))
+    }
+    return nil
+  }
+
   public init(
     _ varNode: VariableDeclSyntax,
     isSet: Bool,
@@ -369,10 +416,16 @@ extension SwiftFunctionSignature {
       throw SwiftFunctionTranslationError.multipleBindings(varNode)
     }
 
-    guard let varTypeNode = binding.typeAnnotation?.type else {
+    let valueType: SwiftType
+    if let varTypeNode = binding.typeAnnotation?.type {
+      valueType = try SwiftType(varTypeNode, lookupContext: lookupContext)
+    } else if let initializer = binding.initializer?.value,
+      let inferred = Self.inferredType(of: initializer, lookupContext: lookupContext)
+    {
+      valueType = inferred
+    } else {
       throw SwiftFunctionTranslationError.missingTypeAnnotation(varNode)
     }
-    let valueType = try SwiftType(varTypeNode, lookupContext: lookupContext)
 
     var accessorEffects: AccessorEffects? = nil
     switch binding.accessorBlock?.accessors {

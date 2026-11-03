@@ -807,10 +807,12 @@ extension JNISwift2JavaGenerator {
       return
     }
 
-    // If contains one function type and it's known java functional interface type, we don't need to print the whole class
+    // If contains one function type and it's known java functional interface type, we don't need to print the whole class.
+    // Match on the Swift type, as the parameter translation does: `(Int) -> Int` has the Java shape of
+    // `LongUnaryOperator` but is translated to its own interface, which must then be printed.
     if translated.functionTypes.count == 1,
       let ty = translated.functionTypes.first,
-      KnownJavaFunctionalInterface.find(ty) != nil
+      KnownJavaFunctionalInterface.find(ty.swiftType) != nil
     {
       return
     }
@@ -821,7 +823,7 @@ extension JNISwift2JavaGenerator {
       """
     ) { printer in
       for functionType in translated.functionTypes {
-        if KnownJavaFunctionalInterface.find(functionType) != nil {
+        if KnownJavaFunctionalInterface.find(functionType.swiftType) != nil {
           continue
         }
 

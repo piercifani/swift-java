@@ -431,8 +431,9 @@ extension JNISwift2JavaGenerator {
       }
 
       let result = try translateClosureResult(functionType.resultType)
+      let knownInterface = KnownJavaFunctionalInterface.find(functionType)
       let interfaceJavaType =
-        if let known = KnownJavaFunctionalInterface.find(functionType) {
+        if let known = knownInterface {
           known.javaType
         } else {
           JavaType.class(
@@ -450,7 +451,10 @@ extension JNISwift2JavaGenerator {
         ],
         conversion: .closureLowering(
           parameters: parameters,
-          result: result
+          result: result,
+          // The method to call is decided with the interface, from the Swift type: the JNI
+          // signature alone can't tell `(Int) -> Int`'s own interface from `LongUnaryOperator`.
+          methodName: knownInterface?.method ?? "apply"
         ),
         indirectConversion: nil,
         conversionCheck: nil
@@ -734,6 +738,16 @@ extension JNISwift2JavaGenerator {
             throw JavaTranslationError.unsupportedSwiftType(type)
           }
 
+          // Platform-width integers are Java `long`s, but `Int.JNIType` is `jint` on 32-bit
+          // platforms: read the `long` as a 64-bit value, then narrow.
+          if let wideType = platformIntegerWideType(knownType) {
+            return NativeResult(
+              javaType: javaType,
+              conversion: .labelessInitializer(.initFromJNI(.placeholder, swiftType: wideType), swiftType: type),
+              outParameters: []
+            )
+          }
+
           // Only support primitives for now.
           return NativeResult(
             javaType: javaType,
@@ -757,6 +771,15 @@ extension JNISwift2JavaGenerator {
       }
     }
 
+    /// `Int64`/`UInt64` for `Int`/`UInt`, whose JNI type is only 64-bit on 64-bit platforms.
+    private func platformIntegerWideType(_ knownType: SwiftKnownTypeDeclKind) -> SwiftType? {
+      switch knownType {
+      case .int: knownTypes.int64
+      case .uint: knownTypes.uint64
+      default: nil
+      }
+    }
+
     func translateClosureParameter(
       _ type: SwiftType,
       parameterName: String
@@ -770,12 +793,21 @@ extension JNISwift2JavaGenerator {
             throw JavaTranslationError.unsupportedSwiftType(type)
           }
 
+          // Platform-width integers widen to 64 bits, so the `jvalue` holds the Java `long` the
+          // functional interface expects, also on 32-bit platforms.
+          let value: NativeSwiftConversionStep =
+            if let wideType = platformIntegerWideType(knownType) {
+              .labelessInitializer(.placeholder, swiftType: wideType)
+            } else {
+              .placeholder
+            }
+
           // Only support primitives for now.
           return NativeParameter(
             parameters: [
               JavaParameter(name: parameterName, type: javaType)
             ],
-            conversion: .getJValue(.placeholder),
+            conversion: .getJValue(value),
             indirectConversion: nil,
             conversionCheck: nil
           )
@@ -1364,7 +1396,7 @@ extension JNISwift2JavaGenerator {
     /// of the `Unsafe(Mutable)Pointer` types in Swift.
     indirect case pointee(NativeSwiftConversionStep)
 
-    indirect case closureLowering(parameters: [NativeParameter], result: NativeResult)
+    indirect case closureLowering(parameters: [NativeParameter], result: NativeResult, methodName: String)
 
     /// Escaping closure lowering using the protocol infrastructure.
     /// This uses UpcallConversionStep for full support of optionals, arrays, custom types, etc.
@@ -1664,7 +1696,7 @@ extension JNISwift2JavaGenerator {
         let inner = inner.render(&printer, placeholder)
         return "\(inner).pointee"
 
-      case .closureLowering(let parameters, let nativeResult):
+      case .closureLowering(let parameters, let nativeResult, let methodName):
         var printer = SwiftPrinter()
 
         let methodSignature = MethodSignature(
@@ -1689,13 +1721,6 @@ extension JNISwift2JavaGenerator {
           $0.conversion.render(&printer, $0.parameters.first!.name)
         }
 
-
-        let methodName =
-          if let known = KnownJavaFunctionalInterface.find(methodSignature) {
-            known.method
-          } else {
-            "apply"
-          }
 
         printer.print(
           """
