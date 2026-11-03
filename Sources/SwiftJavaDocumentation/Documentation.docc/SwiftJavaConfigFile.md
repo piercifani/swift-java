@@ -246,6 +246,16 @@ only supported in `jni` mode.
 
 ---
 
+#### failOnSkippedDeclarations
+
+- **Type:** `Bool?`
+- **Default:** `false`
+
+If true, JExtract fails after generating when it skipped any declaration it could not
+extract or translate, and lists each one. Skipped declarations are always reported as warnings.
+
+---
+
 #### generatedJavaSourcesListFileOutput
 
 - **Type:** `String?`

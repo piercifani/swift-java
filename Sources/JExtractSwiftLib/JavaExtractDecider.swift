@@ -16,13 +16,17 @@ import SwiftExtract
 import SwiftJavaConfigurationShared
 import SwiftSyntax
 
-public func makeSwiftJavaAnalyzer(config: Configuration) -> SwiftAnalyzer {
+public func makeSwiftJavaAnalyzer(
+  config: Configuration,
+  diagnosticsSink: (any SwiftExtractDiagnosticsSink)? = nil
+) -> SwiftAnalyzer {
   SwiftAnalyzer(
     config: config,
     extractDecider: JavaExtractDecider(
       accessLevel: config.effectiveMinimumInputAccessLevelMode,
       logLevel: config.logLevel ?? .info
     ),
+    diagnosticsSink: diagnosticsSink
   )
 }
 

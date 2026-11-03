@@ -37,7 +37,8 @@ public struct SwiftToJava {
 
     let javaPackage = try validateJavaPackage(config.javaPackage)
 
-    let translator = makeSwiftJavaAnalyzer(config: config)
+    let skippedDuringAnalysis = SkippedDeclarationCollector()
+    let translator = makeSwiftJavaAnalyzer(config: config, diagnosticsSink: skippedDuringAnalysis)
     let log = translator.log
 
     guard let inputSwift = config.inputSwiftDirectory else {
@@ -128,6 +129,7 @@ public struct SwiftToJava {
       )
 
       try generator.generate()
+      try failIfSkipped(skippedDuringAnalysis.skipped, module: swiftModule, log: log)
 
     case .jni:
       let generator = JNISwift2JavaGenerator(
@@ -141,9 +143,18 @@ public struct SwiftToJava {
       )
 
       try generator.generate()
+      try failIfSkipped(skippedDuringAnalysis.skipped + generator.skippedDeclarations, module: swiftModule, log: log)
     }
 
     print("[swift-java] Imported Swift module '\(swiftModule)': " + "done.".green)
+  }
+
+  /// With `failOnSkippedDeclarations`, turns skipped declarations into a failure that lists them all.
+  package func failIfSkipped(_ skipped: [String], module: String, log: Logger) throws {
+    guard config.effectiveFailOnSkippedDeclarations, !skipped.isEmpty else {
+      return
+    }
+    throw SkippedDeclarationsError(module: module, skipped: skipped)
   }
 
   /// Compute a relative path (sans `.swift` extension) for a file against the
@@ -266,4 +277,30 @@ private func collectFilesFromPath(
     return
   }
   allFiles.append(path)
+}
+
+/// Collects declarations skipped during analysis.
+package final class SkippedDeclarationCollector: SwiftExtractDiagnosticsSink {
+  package private(set) var skipped: [String] = []
+
+  package init() {}
+
+  package func emit(_ diagnostic: SwiftExtractDiagnostic) {
+    guard case .skippedDeclaration = diagnostic.kind else { return }
+    skipped.append("\(diagnostic.declarationName): \(diagnostic.message)")
+  }
+}
+
+package struct SkippedDeclarationsError: Error, CustomStringConvertible {
+  let module: String
+  let skipped: [String]
+
+  // The list goes in the error itself: the tool fails through `fatalError`, which doesn't flush
+  // log lines written to a piped stdout (as when run by the SwiftPM plugin).
+  package var description: String {
+    """
+    jextract skipped \(skipped.count) declaration(s) in module '\(module)' and 'failOnSkippedDeclarations' is set:
+    \(skipped.map { "  - \($0)" }.joined(separator: "\n"))
+    """
+  }
 }

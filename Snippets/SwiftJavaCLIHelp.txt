@@ -57,8 +57,9 @@ OPTIONS:
                           and --output-swift.
   -l, --log-level <log-level>
                           Configure the level of logs that should be printed
+                          (default: the config's 'logLevel', or 'info')
                           (values: trace, debug, info, notice, warning, error,
-                          critical; default: log level)
+                          critical)
   --config <config>       A path to a custom swift-java.config to use
   --cp, --classpath <cp>  Class search path of directories and zip/jar files
                           from which Java classes can be loaded.
@@ -115,8 +116,9 @@ OPTIONS:
                           and --output-swift.
   -l, --log-level <log-level>
                           Configure the level of logs that should be printed
+                          (default: the config's 'logLevel', or 'info')
                           (values: trace, debug, info, notice, warning, error,
-                          critical; default: log level)
+                          critical)
   --config <config>       A path to a custom swift-java.config to use
   --cp, --classpath <cp>  Class search path of directories and zip/jar files
                           from which Java classes can be loaded.
@@ -145,8 +147,9 @@ OPTIONS:
                           and --output-swift.
   -l, --log-level <log-level>
                           Configure the level of logs that should be printed
+                          (default: the config's 'logLevel', or 'info')
                           (values: trace, debug, info, notice, warning, error,
-                          critical; default: log level)
+                          critical)
   --config <config>       A path to a custom swift-java.config to use
   --cp, --classpath <cp>  Class search path of directories and zip/jar files
                           from which Java classes can be loaded.
@@ -207,8 +210,9 @@ OPTIONS:
                           and --output-swift.
   -l, --log-level <log-level>
                           Configure the level of logs that should be printed
+                          (default: the config's 'logLevel', or 'info')
                           (values: trace, debug, info, notice, warning, error,
-                          critical; default: log level)
+                          critical)
   --config <config>       A path to a custom swift-java.config to use
   --mode <mode>           The mode of generation to use for the output files.
                           Used with jextract mode.

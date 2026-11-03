@@ -44,14 +44,17 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
 
   var thunkNameRegistry = ThunkNameRegistry()
 
+  /// Declarations JNI translation skipped, as "name: reason", for `failOnSkippedDeclarations`.
+  package var skippedDeclarations: [String] = []
+
   /// Accumulates every ``@_cdecl`` symbol name emitted during thunk printing.
   /// Written to a linker version script after generation when
   /// ``Configuration/linkerExportListOutput`` is set.
   var generatedCDeclSymbolNames: [String] = []
 
   /// Cached Java translation result. 'nil' indicates failed translation.
-  var translatedDecls: [ExtractedFunc: TranslatedFunctionDecl] = [:]
-  var translatedEnumCases: [ExtractedEnumCase: TranslatedEnumCase] = [:]
+  var translatedDecls: [ExtractedFunc: TranslatedFunctionDecl?] = [:]
+  var translatedEnumCases: [ExtractedEnumCase: TranslatedEnumCase?] = [:]
 
   /// Module-qualified identities of extracted types that are surfaced to Java as `SwiftError` exceptions.
   lazy var swiftErrorTypes: Set<SwiftNominalIdentity> = Set(
