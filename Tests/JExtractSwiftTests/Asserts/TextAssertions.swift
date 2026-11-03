@@ -43,6 +43,8 @@ func assertOutput(
   /// dependency configs would carry. Forwarded to the generator so cross-module
   /// type references print with their fully-qualified Java name.
   moduleJavaPackages: [String: String] = [:],
+  /// Dependency modules extracted with `enableJavaCallbacks`.
+  javaCallbackModules: Set<String> = [],
   expectedChunks: [String],
   notExpectedChunks: [String] = [],
   fileID: String = #fileID,
@@ -92,7 +94,8 @@ func assertOutput(
       swiftOutputDirectory: "/fake",
       javaOutputDirectory: "/fake",
       javaClassLookupTable: javaClassLookupTable,
-      moduleJavaPackages: moduleJavaPackages
+      moduleJavaPackages: moduleJavaPackages,
+      javaCallbackModules: javaCallbackModules
     )
 
     switch renderKind {

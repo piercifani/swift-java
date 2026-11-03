@@ -37,6 +37,9 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
 
   let javaClassLookupTable: JavaClassLookupTable
   let moduleJavaPackages: ModuleJavaPackages
+  /// Dependency modules extracted with `enableJavaCallbacks`: their protocols have public Swift
+  /// wrappers, so Java implementations of them can be passed to this module too.
+  let javaCallbackModules: Set<String>
 
   var javaPackagePath: String {
     javaPackage.replacingOccurrences(of: ".", with: "/")
@@ -82,6 +85,7 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     javaOutputDirectory: String,
     javaClassLookupTable: JavaClassLookupTable,
     moduleJavaPackages: ModuleJavaPackages,
+    javaCallbackModules: Set<String> = [],
   ) {
     self.config = config
     self.logger = Logger(label: "jni-generator", logLevel: translator.log.logLevel)
@@ -92,6 +96,7 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     self.javaOutputDirectory = javaOutputDirectory
     self.javaClassLookupTable = javaClassLookupTable
     self.moduleJavaPackages = moduleJavaPackages
+    self.javaCallbackModules = javaCallbackModules
     self.lookupContext = translator.lookupContext
 
     // If we are forced to write empty files, construct the expected outputs.

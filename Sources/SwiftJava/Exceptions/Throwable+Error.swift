@@ -13,6 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 // Translate all Java Throwable instances in a Swift error.
+//
+// `Error` implies `Sendable`. The conformance is `@unchecked` here at the root so that subclasses,
+// such as the classes wrap-java generates for Java exceptions in a Swift 6 language mode module,
+// don't each fail the "non-final class cannot conform to 'Sendable'" check.
+extension Throwable: @unchecked Sendable {}
+
 extension Throwable: Error, CustomStringConvertible {
   public var description: String {
     toString()

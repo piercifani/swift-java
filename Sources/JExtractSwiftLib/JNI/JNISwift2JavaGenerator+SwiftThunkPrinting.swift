@@ -185,7 +185,8 @@ extension JNISwift2JavaGenerator {
     let inheritedWrappers = self.inheritedProtocols(of: translatedWrapper.importedType).compactMap { self.interfaceProtocolWrappers[$0] }
     let inheritedTypes = [translatedWrapper.swiftName] + inheritedWrappers.map(\.wrapperName)
 
-    printer.printBraceBlock("protocol \(translatedWrapper.wrapperName): \(inheritedTypes.joined(separator: .comma))") { printer in
+    // Public, so modules that take this protocol as a parameter can wrap Java implementations of it.
+    printer.printBraceBlock("public protocol \(translatedWrapper.wrapperName): \(inheritedTypes.joined(separator: .comma))") { printer in
       printer.print(
         "var \(translatedWrapper.javaInterfaceVariableName): \(translatedWrapper.javaInterfaceName) { get }"
       )
@@ -193,7 +194,7 @@ extension JNISwift2JavaGenerator {
     printer.println()
     try printer.printBraceBlock("extension \(translatedWrapper.wrapperName)") { printer in
       for inherited in inheritedWrappers {
-        printer.printBraceBlock("var \(inherited.javaInterfaceVariableName): \(inherited.javaInterfaceName)") { printer in
+        printer.printBraceBlock("public var \(inherited.javaInterfaceVariableName): \(inherited.javaInterfaceName)") { printer in
           printer.print("\(translatedWrapper.javaInterfaceVariableName)")
         }
         printer.println()
@@ -228,7 +229,12 @@ extension JNISwift2JavaGenerator {
       throw JavaTranslationError.protocolWasNotExtracted
     }
 
-    printer.printBraceBlock(function.swiftDecl.signatureString) { printer in
+    if function.originalFunctionSignature.isAsync {
+      printAsyncInterfaceWrapperFunctionImpl(&printer, function, inside: wrapper, translatedDecl: translatedDecl)
+      return
+    }
+
+    printer.printBraceBlock(publicSignature(function.swiftDecl)) { printer in
       let resultType = function.originalFunctionSignature.result.type
       let returnStmt = !resultType.isVoid ? "return " : ""
       // If the protocol function is non-throwing, we have no option but to force try.
@@ -244,6 +250,7 @@ extension JNISwift2JavaGenerator {
       let estimatedRefCount = paramCount * 2 + 4
       printer.print("let environment$ = try! JavaVirtualMachine.shared().environment()")
       printer.printBraceBlock("\(returnStmt)\(withLocalFrameTryKeyword) environment$.withLocalFrame(capacity: \(estimatedRefCount))") { printer in
+        printCurrentThreadJavaInterface(&printer, wrapper)
         var upcallArguments = zip(
           function.originalFunctionSignature.parameters,
           function.parameterConversions,
@@ -260,10 +267,81 @@ extension JNISwift2JavaGenerator {
 
         let tryClause = function.originalFunctionSignature.isThrowing ? "try " : ""
         let javaUpcall =
-          "\(tryClause)\(wrapper.javaInterfaceVariableName).\(function.swiftFunctionName)(\(upcallArguments.joined(separator: .comma)))"
+          "\(tryClause)javaInterface$.\(function.swiftFunctionName)(\(upcallArguments.joined(separator: .comma)))"
 
         let result = function.resultConversion.render(&printer, javaUpcall)
         printer.print("\(returnStmt)\(result)")
+      }
+    }
+  }
+
+  /// A requirement's signature, made `public` so the wrapper's default implementations are visible
+  /// to conformances in other modules.
+  private func publicSignature(_ decl: any DeclSyntaxProtocol) -> String {
+    let isPublic =
+      decl.asProtocol(WithModifiersSyntax.self)?.modifiers.contains { $0.name.tokenKind == .keyword(.public) } ?? false
+    return isPublic ? decl.signatureString : "public \(decl.signatureString)"
+  }
+
+  /// The wrapped Java object, bound to this thread's `JNIEnv`. The stored interface keeps the
+  /// environment of the thread that created it, but Swift may call the requirement from any thread
+  /// (always, for `async` requirements run on the cooperative pool).
+  private func printCurrentThreadJavaInterface(_ printer: inout SwiftPrinter, _ wrapper: JavaInterfaceSwiftWrapper) {
+    printer.print(
+      "let javaInterface$ = \(wrapper.javaInterfaceName)(javaThis: \(wrapper.javaInterfaceVariableName).javaThis, environment: environment$)"
+    )
+  }
+
+  /// An `async` requirement implemented in Java: call the Java method, which returns a
+  /// `CompletableFuture`, then await it without blocking a thread and convert its value.
+  private func printAsyncInterfaceWrapperFunctionImpl(
+    _ printer: inout SwiftPrinter,
+    _ function: JavaInterfaceSwiftWrapper.Function,
+    inside wrapper: JavaInterfaceSwiftWrapper,
+    translatedDecl: TranslatedFunctionDecl
+  ) {
+    printer.printBraceBlock(publicSignature(function.swiftDecl)) { printer in
+      let signature = function.originalFunctionSignature
+      let resultType = signature.result.type
+      // A non-throwing requirement can't propagate a Java exception, so it traps instead.
+      let tryKeyword = signature.isThrowing ? "try" : "try!"
+      let paramCount = signature.parameters.count
+      let estimatedRefCount = paramCount * 2 + 4
+
+      printer.print("let environment$ = try! JavaVirtualMachine.shared().environment()")
+      printer.printBraceBlock("let future$ = \(tryKeyword) environment$.withLocalFrame(capacity: \(estimatedRefCount))") { printer in
+        printCurrentThreadJavaInterface(&printer, wrapper)
+        var upcallArguments = zip(signature.parameters, function.parameterConversions).map { param, conversion in
+          conversion.render(&printer, param.parameterName!)
+        }
+        if translatedDecl.translatedFunctionSignature.requiresSwiftArena {
+          // `JavaValue` is provided for optional Java objects, as wrap-java's parameters are.
+          upcallArguments.append("Optional(JavaSwiftArena.defaultAutoArena)")
+        }
+        // wrap-java doesn't bind methods returning a generic `CompletableFuture<T>`, so call it dynamically.
+        let arguments = upcallArguments.isEmpty ? "" : "arguments: \(upcallArguments.joined(separator: .comma)), "
+        printer.print(
+          "return try javaInterface$.dynamicJavaMethodCall(methodName: \"\(function.swiftFunctionName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
+        )
+      }
+      printer.printBraceBlock("guard let future$ else") { printer in
+        printer.print("fatalError(\"Upcall to \(function.swiftFunctionName) unexpectedly returned a null future\")")
+      }
+
+      if resultType.isVoid {
+        printer.print("_ = \(tryKeyword) await _awaitCompletableFuture(future$)")
+        return
+      }
+      printer.print("let result$ = \(tryKeyword) await _awaitCompletableFuture(future$)")
+      // The task may have resumed on another thread: use its environment from here on.
+      printer.print("let resumedEnvironment$ = try! JavaVirtualMachine.shared().environment()")
+      if resultType.isDirectlyTranslatedToWrapJava {
+        printer.print("return \(resultType).fromJavaObject(result$?.javaThis, in: resumedEnvironment$)")
+      } else {
+        printer.printBraceBlock("return try! resumedEnvironment$.withLocalFrame(capacity: 4)") { printer in
+          let result = function.resultConversion.render(&printer, "result$")
+          printer.print("return \(result)")
+        }
       }
     }
   }
@@ -543,13 +621,19 @@ extension JNISwift2JavaGenerator {
     // For each parameter that is a generic or a protocol,
     // we generate a Swift class that conforms to all of those.
     for (parameter, protocolTypes) in protocolParameters {
-      let protocolWrappers: [JavaInterfaceSwiftWrapper] = protocolTypes.compactMap { protocolType in
-        guard let importedType = self.asExtractedNominalTypeDecl(protocolType),
-          let wrapper = self.interfaceProtocolWrappers[importedType]
-        else {
+      // A protocol has a Swift wrapper if it was extracted here with one, or comes from a dependency
+      // extracted with Java callbacks. Either way the names follow from the protocol declaration.
+      let protocolWrappers: [SwiftNominalTypeDeclaration] = protocolTypes.compactMap { protocolType in
+        guard let nominal = protocolType.asNominalTypeDeclaration else {
           return nil
         }
-        return wrapper
+        if let importedType = self.asExtractedNominalTypeDecl(protocolType), self.interfaceProtocolWrappers[importedType] != nil {
+          return nominal
+        }
+        if nominal.moduleName != swiftModuleName, javaCallbackModules.contains(nominal.moduleName) {
+          return nominal
+        }
+        return nil
       }
 
       // Make sure we can generate wrappers for all the protocols
@@ -569,9 +653,11 @@ extension JNISwift2JavaGenerator {
         parameterName: parameterName,
         parentName: decl.parentType?.asNominalType?.nominalTypeDecl.qualifiedTypeName ?? SwiftQualifiedTypeName(swiftModuleName),
       )
-      let implementingProtocols = protocolWrappers.map(\.wrapperName).joined(separator: .comma)
+      let implementingProtocols = protocolWrappers.map(\.javaInterfaceSwiftProtocolWrapperName).joined(separator: .comma)
 
-      printer.printBraceBlock("final class \(swiftClassName): \(implementingProtocols)") { printer in
+      // `@unchecked Sendable`: the protocols may require `Sendable`, and the wrapper only holds Java
+      // references, which every call re-binds to the calling thread.
+      printer.printBraceBlock("final class \(swiftClassName): \(implementingProtocols), @unchecked Sendable") { printer in
         let variables: [(String, String)] = protocolWrappers.map { wrapper in
           (wrapper.javaInterfaceVariableName, wrapper.javaInterfaceName)
         }
