@@ -37,3 +37,14 @@ public enum ComplexAssociatedValues {
   case optionalTypealiasedGeneric(id: MyIntID?)
   case array([String])
 }
+
+/// A case named like its payload type: the Java record `Case.MySwiftStruct` would shadow
+/// the `MySwiftStruct` class without qualification.
+public enum StructHolder {
+  case empty
+  case mySwiftStruct(MySwiftStruct)
+
+  public static func holding(len: Int64) -> StructHolder {
+    .mySwiftStruct(MySwiftStruct(cap: len, len: len))
+  }
+}

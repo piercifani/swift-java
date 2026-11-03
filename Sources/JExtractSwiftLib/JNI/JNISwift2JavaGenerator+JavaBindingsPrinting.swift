@@ -665,14 +665,25 @@ extension JNISwift2JavaGenerator {
         "<\(decl.genericParameterNames.joined(separator: .comma))>"
       }
 
+    // Inside `Case`, each record's name shadows a type of the same simple name, so for
+    // `case market(Market)` the component `Market` would mean the record `Case.Market`.
+    let recordNames = Set(decl.cases.compactMap { self.translatedEnumCase(for: $0)?.name })
+    let genericParameterNames = Set(decl.genericParameterNames)
+
     printer.printBraceBlock("public sealed interface Case\(caseGenericClause)") { printer in
       for enumCase in decl.cases {
         guard let translatedCase = self.translatedEnumCase(for: enumCase) else {
           continue
         }
 
-        let members = translatedCase.parameters.map {
-          $0.renderParameter()
+        let members = translatedCase.parameters.map { parameter in
+          var parameter = parameter
+          if case .concrete(let type) = parameter.type {
+            parameter.type = .concrete(
+              qualifyingShadowedTypes(type, shadowedBy: recordNames, genericParameterNames: genericParameterNames)
+            )
+          }
+          return parameter.renderParameter()
         }
 
         // Print record
@@ -707,6 +718,28 @@ extension JNISwift2JavaGenerator {
           }
         }
       }
+    }
+  }
+
+  /// Fully qualifies package-less class types whose leading name is shadowed by one of `names`.
+  /// Package-less types are the ones jextract generates into this module's Java package.
+  private func qualifyingShadowedTypes(
+    _ type: JavaType,
+    shadowedBy names: Set<String>,
+    genericParameterNames: Set<String>
+  ) -> JavaType {
+    switch type {
+    case .class(let package, let name, let typeParameters):
+      let typeParameters = typeParameters.map {
+        qualifyingShadowedTypes($0, shadowedBy: names, genericParameterNames: genericParameterNames)
+      }
+      let leadingName = String(name.prefix { $0 != "." })
+      let isShadowed = package == nil && names.contains(leadingName) && !genericParameterNames.contains(leadingName)
+      return .class(package: isShadowed ? javaPackage : package, name: name, typeParameters: typeParameters)
+    case .array(let element):
+      return .array(qualifyingShadowedTypes(element, shadowedBy: names, genericParameterNames: genericParameterNames))
+    default:
+      return type
     }
   }
 

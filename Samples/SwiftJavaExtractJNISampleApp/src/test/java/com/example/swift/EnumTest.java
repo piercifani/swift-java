@@ -95,4 +95,14 @@ public class EnumTest {
             });
         }
     }
+
+    @Test
+    void caseNamedLikeItsPayload() {
+        try (var arena = SwiftArena.ofConfined()) {
+            StructHolder holder = StructHolder.holding(3, arena);
+            StructHolder.Case c = holder.getCase(arena);
+            assertInstanceOf(StructHolder.Case.MySwiftStruct.class, c);
+            assertEquals(3, ((StructHolder.Case.MySwiftStruct) c).arg0().getLen());
+        }
+    }
 }
