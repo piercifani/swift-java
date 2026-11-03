@@ -215,6 +215,15 @@ extension JNISwift2JavaGenerator {
         methodName: javaName,
         parentName: parentName,
       )
+      // The declaration's own optionals only: closures and other nested signatures keep `Optional`.
+      if config.effectiveOptionalsAsNullable {
+        for (idx, parameter) in decl.functionSignature.parameters.enumerated() where Self.isOptional(parameter.type) {
+          translatedFunctionSignature.parameters[idx] = nullable(translatedFunctionSignature.parameters[idx])
+        }
+        if Self.isOptional(decl.functionSignature.result.type) {
+          translatedFunctionSignature.result = nullable(translatedFunctionSignature.result, resultName: "result")
+        }
+      }
       // Java -> Java (native)
       var nativeFunctionSignature = try nativeTranslation.translate(
         functionSignature: decl.functionSignature,
@@ -835,6 +844,68 @@ extension JNISwift2JavaGenerator {
         ),
         conversion: .placeholder,
       )
+    }
+
+    static func isOptional(_ type: SwiftType) -> Bool {
+      if case .nominal(let nominal) = type, nominal.nominalTypeDecl.knownTypeKind == .optional {
+        return true
+      }
+      return false
+    }
+
+    /// The wrapped Java type of a Java optional type, boxed, with the method that unwraps a present value.
+    private func nullableType(ofOptional type: JavaType) -> (type: JavaType, getter: String)? {
+      guard case .class(_, let name, let typeParameters) = type else {
+        return nil
+      }
+      switch name {
+      case "OptionalLong": return (.class(package: "java.lang", name: "Long"), "getAsLong")
+      case "OptionalInt": return (.class(package: "java.lang", name: "Integer"), "getAsInt")
+      case "OptionalDouble": return (.class(package: "java.lang", name: "Double"), "getAsDouble")
+      case "Optional" where typeParameters.count == 1: return (typeParameters[0], "get")
+      // Primitive optionals spelled as one class name, such as `Optional<Boolean>`
+      case _ where name.hasPrefix("Optional<") && name.hasSuffix(">"):
+        return (JavaType(className: name.dropFirst("Optional<".count).dropLast()), "get")
+      default: return nil
+      }
+    }
+
+    /// With `optionalsAsNullable`, an optional parameter takes the wrapped type, `null` for `nil`, and
+    /// makes the `Optional` the translated conversion expects.
+    func nullable(_ parameter: TranslatedParameter) -> TranslatedParameter {
+      guard let (wrapped, _) = nullableType(ofOptional: parameter.parameter.type.javaType),
+        case .class(_, let optionalClass, _) = parameter.parameter.type.javaType
+      else {
+        return parameter
+      }
+      let name = parameter.parameter.name
+      let optional =
+        switch optionalClass {
+        case "OptionalLong", "OptionalInt", "OptionalDouble":
+          "(\(name) == null ? \(optionalClass).empty() : \(optionalClass).of(\(name)))"
+        default:
+          "Optional.ofNullable(\(name))"
+        }
+      return TranslatedParameter(
+        parameter: JavaParameter(name: name, type: wrapped, annotations: parameter.parameter.annotations),
+        conversion: .replacingPlaceholder(parameter.conversion, placeholder: optional)
+      )
+    }
+
+    /// With `optionalsAsNullable`, an optional result is its wrapped value, or `null` for `nil`.
+    func nullable(_ result: TranslatedResult, resultName: String) -> TranslatedResult {
+      guard let (wrapped, getter) = nullableType(ofOptional: result.javaType) else {
+        return result
+      }
+      let optional = "\(resultName)$optional"
+      var nullable = result
+      nullable.javaType = wrapped
+      nullable.conversion = .ternary(
+        .method(.placeToVar(result.conversion, name: optional, type: result.javaType), function: "isPresent"),
+        thenExp: .method(.constant(optional), function: getter),
+        elseExp: .constant("null")
+      )
+      return nullable
     }
 
     func translateOptionalParameter(

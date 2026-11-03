@@ -246,6 +246,17 @@ only supported in `jni` mode.
 
 ---
 
+#### optionalsAsNullable
+
+- **Type:** `Bool?`
+- **Default:** `false`
+
+If true, optional parameters and results of functions and properties use the wrapped Java type,
+with `null` for `nil`, instead of `Optional`, `OptionalLong`, `OptionalInt` or `OptionalDouble`.
+Only supported in `jni` mode.
+
+---
+
 #### generatedJavaSourcesListFileOutput
 
 - **Type:** `String?`

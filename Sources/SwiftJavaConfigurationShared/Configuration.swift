@@ -181,6 +181,14 @@ public struct Configuration: Codable {
     enableJavaCallbacks ?? false
   }
 
+  /// If true, optional parameters and results of functions and properties use the wrapped Java type,
+  /// with `null` for `nil`, instead of `Optional`, `OptionalLong`, `OptionalInt` or `OptionalDouble`.
+  /// Only supported in `jni` mode.
+  public var optionalsAsNullable: Bool?
+  public var effectiveOptionalsAsNullable: Bool {
+    optionalsAsNullable ?? false
+  }
+
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
   public var generatedJavaSourcesListFileOutput: String?
 

@@ -746,8 +746,16 @@ extension JNISwift2JavaGenerator {
             }.joined(separator: .comma)
           }
         let translatedResult = getAsCaseFunction.translatedFunctionSignature.result
+        let associatedValues = JavaNativeConversionStep.placeToVar(
+          translatedResult.conversion,
+          name: "associatedValues$",
+          type: translatedResult.javaType
+        )
+        // With `optionalsAsNullable` the associated values are `null` when it's another case.
         getAsCaseFunction.translatedFunctionSignature.result.conversion = .method(
-          .placeToVar(translatedResult.conversion, name: "associatedValues$", type: translatedResult.javaType),
+          config.effectiveOptionalsAsNullable
+            ? .method(.constant("java.util.Optional"), function: "ofNullable", arguments: [associatedValues])
+            : associatedValues,
           function: "map",
           arguments: [
             .lambda(
