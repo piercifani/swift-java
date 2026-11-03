@@ -173,6 +173,49 @@ extension JNISwift2JavaGenerator {
       }
   }
 
+  /// Whether `type` is a concrete (non-generic) Swift class whose Java class can take part in a
+  /// Java class hierarchy.
+  func isHierarchyClass(_ type: ExtractedNominalType) -> Bool {
+    type.swiftNominal.kind == .class && !type.swiftNominal.isGeneric && !type.isSpecialization
+      && !self.isSwiftErrorType(type)
+  }
+
+  /// The extracted superclass of `type` in this module, which its Java class extends.
+  func extractedSuperclass(of type: ExtractedNominalType) -> ExtractedNominalType? {
+    guard isHierarchyClass(type) else { return nil }
+    return type.inheritedTypes
+      .compactMap(\.asNominalTypeDeclaration)
+      .filter { $0.kind == .class }
+      .compactMap { self.analysis.extractedTypes[$0.qualifiedName] }
+      .first(where: isHierarchyClass)
+  }
+
+  /// Extracted classes in this module that inherit from `type`, directly or not, deepest first, so
+  /// the most specific Java class is matched first when wrapping an instance of its dynamic type.
+  func extractedSubclasses(of type: ExtractedNominalType) -> [ExtractedNominalType] {
+    func depth(_ type: ExtractedNominalType) -> Int {
+      extractedSuperclass(of: type).map { depth($0) + 1 } ?? 0
+    }
+    func inherits(_ candidate: ExtractedNominalType) -> Bool {
+      var current = extractedSuperclass(of: candidate)
+      while let superclass = current {
+        if superclass.swiftNominal.qualifiedName == type.swiftNominal.qualifiedName { return true }
+        current = extractedSuperclass(of: superclass)
+      }
+      return false
+    }
+    return analysis.extractedTypes.values
+      .filter(inherits)
+      .sorted { (depth($0), $0.swiftNominal.qualifiedName) > (depth($1), $1.swiftNominal.qualifiedName) }
+  }
+
+  /// Whether `type`'s Java class can be extended: it's `open`, or has extracted subclasses.
+  func isExtendableClass(_ type: ExtractedNominalType) -> Bool {
+    guard isHierarchyClass(type) else { return false }
+    let isOpen = type.swiftNominal.syntax.modifiers.contains { $0.name.tokenKind == .keyword(.open) }
+    return isOpen || !extractedSubclasses(of: type).isEmpty
+  }
+
   /// Whether `type` conforms to `Error` and is surfaced to Java as a `SwiftError` subclass.
   ///
   /// Types that never get a Java class or bridge (protocols, unspecialized generics,
