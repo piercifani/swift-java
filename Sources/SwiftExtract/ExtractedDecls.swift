@@ -493,6 +493,35 @@ public final class ExtractedFunc: ExtractedSwiftDecl, CustomStringConvertible {
 
     return overloads
   }
+
+  /// Overloads that leave out this function's trailing defaulted parameters, longest first, for
+  /// callers without default arguments. Swift fills in the values they leave out.
+  public func defaultArgumentOverloads() -> [ExtractedFunc] {
+    let parameters = functionSignature.parameters
+    var overloads: [ExtractedFunc] = []
+    var count = parameters.count
+    while count > 0, parameters[count - 1].hasDefaultValue {
+      count -= 1
+      var signature = functionSignature
+      signature.parameters = Array(parameters.prefix(count))
+      overloads.append(
+        ExtractedFunc(
+          module: module,
+          swiftDecl: swiftDecl,
+          name: name,
+          apiKind: apiKind,
+          functionSignature: signature,
+          sourceFilePath: sourceFilePath
+        )
+      )
+    }
+    return overloads
+  }
+
+  /// Identifies an overload by name and parameter types, as Java does.
+  var overloadKey: String {
+    "\(name)(\(functionSignature.parameters.map { "\($0.type)" }.joined(separator: ",")))"
+  }
 }
 
 extension ExtractedFunc: Hashable {

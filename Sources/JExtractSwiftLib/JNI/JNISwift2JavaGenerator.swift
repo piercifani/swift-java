@@ -130,6 +130,8 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     // Expand variadic functions into N overloads
     var expandedAnalysis = analysis
     expandedAnalysis.expandVariadicOverloads(maxOverloads: config.effectiveMaxVariadicOverloads)
+    // Default arguments become overloads without the trailing defaulted parameters
+    expandedAnalysis.expandDefaultArgumentOverloads()
     self.analysis = expandedAnalysis
 
     // Every extracted protocol that also gets a plain Java `interface`
