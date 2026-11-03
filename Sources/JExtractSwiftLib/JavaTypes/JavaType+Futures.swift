@@ -20,4 +20,9 @@ extension JavaType {
   static func simpleCompletableFuture(_ T: JavaType) -> JavaType {
     .class(package: "org.swift.swiftkit.core", name: "SimpleCompletableFuture", typeParameters: [T.boxedType])
   }
+
+  /// The description of the type org.swift.swiftkit.core.SwiftAsyncStream<T>
+  static func swiftAsyncStream(_ T: JavaType) -> JavaType {
+    .class(package: "org.swift.swiftkit.core", name: "SwiftAsyncStream", typeParameters: [T.boxedType])
+  }
 }

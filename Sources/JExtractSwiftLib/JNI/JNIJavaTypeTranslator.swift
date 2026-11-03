@@ -53,6 +53,7 @@ enum JNIJavaTypeTranslator {
       .array,
       .dictionary,
       .set,
+      .asyncStream,
       .foundationDate, .essentialsDate,
       .foundationUUID, .essentialsUUID,
       .foundationURL, .essentialsURL:
@@ -81,6 +82,7 @@ enum JNIJavaTypeTranslator {
       .array,
       .dictionary,
       .set,
+      .asyncStream,
       .foundationDate, .essentialsDate,
       .foundationUUID, .essentialsUUID,
       .foundationURL, .essentialsURL:
@@ -109,6 +111,7 @@ enum JNIJavaTypeTranslator {
       .array,
       .dictionary,
       .set,
+      .asyncStream,
       .foundationDate, .essentialsDate,
       .foundationUUID, .essentialsUUID,
       .foundationURL, .essentialsURL:

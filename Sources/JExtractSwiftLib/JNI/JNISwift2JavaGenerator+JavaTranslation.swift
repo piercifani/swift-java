@@ -218,15 +218,25 @@ extension JNISwift2JavaGenerator {
       // Name.
       let javaName = javaIdentifiers.makeJavaMethodName(decl)
 
+      // A function returning `AsyncStream<T>` is translated as returning `T`, then converted to a stream.
+      var resultSignature = decl.functionSignature
+      let streamElementType = Self.asyncStreamElementType(decl.functionSignature.result.type)
+      if let streamElementType {
+        if decl.functionSignature.isAsync || decl.functionSignature.isIsolated || decl.functionSignature.isImplicitlyAsync {
+          throw JavaTranslationError.unsupportedSwiftType(decl.functionSignature.result.type)
+        }
+        resultSignature.result = SwiftResult(convention: .direct, type: streamElementType)
+      }
+
       // Swift -> Java
       var translatedFunctionSignature = try self.translate(
-        functionSignature: decl.functionSignature,
+        functionSignature: resultSignature,
         methodName: javaName,
         parentName: parentName,
       )
       // Java -> Java (native)
       var nativeFunctionSignature = try nativeTranslation.translate(
-        functionSignature: decl.functionSignature,
+        functionSignature: resultSignature,
         translatedFunctionSignature: translatedFunctionSignature,
         methodName: javaName,
         parentName: parentName,
@@ -261,6 +271,13 @@ extension JNISwift2JavaGenerator {
         default:
           break
         }
+      }
+
+      if streamElementType != nil {
+        try self.convertToAsyncStream(
+          translatedFunctionSignature: &translatedFunctionSignature,
+          nativeFunctionSignature: &nativeFunctionSignature
+        )
       }
 
       // Handle async methods and isolated methods
@@ -697,6 +714,54 @@ extension JNISwift2JavaGenerator {
         ),
         conversion: .commaSeparated(elementConversions),
       )
+    }
+
+    /// The element type of an `AsyncStream<Element>`, or nil.
+    static func asyncStreamElementType(_ type: SwiftType) -> SwiftType? {
+      guard case .nominal(let nominal) = type, case .asyncStream(let element) = nominal.asKnownType else {
+        return nil
+      }
+      return element
+    }
+
+    /// Turns a function translated as returning `T` into one returning a `SwiftAsyncStream<T>`: Java
+    /// passes a stream for Swift to attach the `AsyncStream` to, and maps each delivered element
+    /// with the conversion it would apply to a `T` result.
+    func convertToAsyncStream(
+      translatedFunctionSignature: inout TranslatedFunctionSignature,
+      nativeFunctionSignature: inout NativeFunctionSignature
+    ) throws {
+      let element = translatedFunctionSignature.result
+      let nativeElement = nativeFunctionSignature.result
+      // Elements arrive one at a time as a single Java value; indirect returns (out parameters) don't fit.
+      guard element.outParameters.isEmpty, nativeElement.outParameters.isEmpty, !nativeElement.javaType.isVoid else {
+        throw JavaTranslationError.asyncStreamElementNotSupported
+      }
+      let nativeStreamType = JavaType.swiftAsyncStream(nativeElement.javaType)
+
+      translatedFunctionSignature.result = TranslatedResult(
+        javaType: .swiftAsyncStream(element.javaType),
+        nativeJavaType: .void,
+        annotations: element.annotations,
+        outParameters: [OutParameter(name: "stream$", type: nativeStreamType, allocation: .new)],
+        conversion: .method(
+          .constant("stream$"),
+          function: "map",
+          arguments: [
+            .lambda(
+              args: ["element$"],
+              body: .replacingPlaceholder(element.conversion, placeholder: "element$")
+            )
+          ]
+        )
+      )
+
+      nativeFunctionSignature.result.conversion = .attachAsyncStream(
+        elementConversion: nativeElement.conversion,
+        elementJavaType: nativeElement.javaType
+      )
+      nativeFunctionSignature.result.javaType = .void
+      nativeFunctionSignature.result.outParameters.append(.init(name: "result_stream", type: nativeStreamType))
     }
 
     func convertToAsync(
@@ -2262,6 +2327,9 @@ extension JNISwift2JavaGenerator {
     /// The user has not supplied a mapping from `SwiftType` to
     /// a java class.
     case wrappedJavaClassTranslationNotProvided(SwiftType)
+
+    /// `AsyncStream` elements must convert to a single Java value.
+    case asyncStreamElementNotSupported
 
     // FIXME: Remove once we support protocol variables
     case protocolVariablesNotSupported
