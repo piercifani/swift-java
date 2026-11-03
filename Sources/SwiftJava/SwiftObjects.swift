@@ -101,13 +101,27 @@ extension SwiftObjects {
 
   @JavaMethod
   public static func equals(environment: UnsafeMutablePointer<JNIEnv?>!, lhsPointer: Int64, lhsTypePointer: Int64, rhsPointer: Int64, rhsTypePointer: Int64) -> Bool {
-    // Fallback for non-equatable types (such as classes)
+    // Fallback for non-equatable value types: the same memory
     let isPointerIdentityEqual = lhsTypePointer == rhsTypePointer && lhsPointer == rhsPointer
 
     guard let lhsType$ = UnsafeRawPointer(bitPattern: Int(lhsTypePointer)) else {
       fatalError("lhsType metadata address was null")
     }
     let lhsMetatype = unsafeBitCast(lhsType$, to: Any.Type.self)
+
+    // Each Java wrapper of a class instance holds its own pointer to the reference, so compare the
+    // objects themselves: wrappers of the same instance are equal, whatever their static types.
+    if let lhsObject = Self.classInstance(at: lhsPointer, ofType: lhsMetatype),
+      let rhsType$ = UnsafeRawPointer(bitPattern: Int(rhsTypePointer)),
+      let rhsObject = Self.classInstance(at: rhsPointer, ofType: unsafeBitCast(rhsType$, to: Any.Type.self))
+    {
+      if lhsObject === rhsObject {
+        return true
+      }
+      guard lhsMetatype is any Equatable.Type else {
+        return false
+      }
+    }
     guard let lhsMetatype = lhsMetatype as? (any Equatable.Type) else {
       return isPointerIdentityEqual
     }
@@ -145,7 +159,15 @@ extension SwiftObjects {
       fatalError("selfType metadata address was null")
     }
     let typeMetadata = unsafeBitCast(selfType$, to: Any.Type.self)
-    guard let typeMetadata = typeMetadata as? (any Hashable.Type) else {
+    guard let hashableMetadata = typeMetadata as? (any Hashable.Type) else {
+      if let object = Self.classInstance(at: selfPointer, ofType: typeMetadata) {
+        // Consistent with `equals`: an `Equatable` class may equal other instances, so it can only
+        // hash by type; otherwise equality is identity.
+        if typeMetadata is any Equatable.Type {
+          return Int32(truncatingIfNeeded: ObjectIdentifier(typeMetadata).hashValue)
+        }
+        return Int32(truncatingIfNeeded: ObjectIdentifier(object).hashValue)
+      }
       // For value types, different instances may return different hash codes even if the values are same.
       return Int32(truncatingIfNeeded: selfPointer.hashValue)
     }
@@ -156,7 +178,16 @@ extension SwiftObjects {
       }
       return Int32(truncatingIfNeeded: self$.pointee.hashValue)
     }
-    return perform(as: typeMetadata)
+    return perform(as: hashableMetadata)
+  }
+
+  /// The class instance stored at `pointer`, or nil if `type` isn't a class type.
+  private static func classInstance(at pointer: Int64, ofType type: Any.Type) -> AnyObject? {
+    guard type is AnyClass, let raw = UnsafeRawPointer(bitPattern: Int(pointer)) else {
+      return nil
+    }
+    // A class reference has the layout of `AnyObject`.
+    return raw.load(as: AnyObject.self)
   }
 
   @JavaMethod

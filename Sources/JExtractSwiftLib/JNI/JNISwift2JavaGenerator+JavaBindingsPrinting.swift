@@ -708,6 +708,14 @@ extension JNISwift2JavaGenerator {
         }
       }
     }
+
+    // With a global automatic arena, also offer `getCase()` without an arena, like other members.
+    if requiresSwiftArena && config.effectiveMemoryManagementMode.requiresGlobalArena {
+      printer.println()
+      printer.printBraceBlock("public Case\(caseGenericClause) getCase()") { printer in
+        printer.print("return getCase(SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA);")
+      }
+    }
   }
 
   private func printEnumStaticInitializers(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
