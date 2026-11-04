@@ -364,7 +364,14 @@ extension JNISwift2JavaGenerator {
         swiftPointerParams.append("selfTypePointer")
       }
       let javaName = decl.effectiveJavaSimpleName
-      printDesignatedConstructor(&printer, javaName: javaName, pointerParams: swiftPointerParams)
+      let superclass = self.extractedSuperclass(of: decl)
+      printDesignatedConstructor(
+        &printer,
+        javaName: javaName,
+        pointerParams: swiftPointerParams,
+        isExtendable: self.isExtendableClass(decl),
+        hasSuperclass: superclass != nil
+      )
       printer.println()
       let genericClause = decl.javaGenericClause
       printWrapMemoryAddressUnsafeFactory(
@@ -372,27 +379,31 @@ extension JNISwift2JavaGenerator {
         javaName: javaName,
         genericClause: genericClause,
         pointerParams: swiftPointerParams,
-        docSummary: "Assume that the passed {@code long} represents a memory address of a {@link \(javaName)}."
+        docSummary: "Assume that the passed {@code long} represents a memory address of a {@link \(javaName)}.",
+        subclasses: self.extractedSubclasses(of: decl)
       )
 
-      printer.print(
-        """
-        /** Pointer to the "self". */
-        private final long selfPointer;
+      // A subclass inherits the pointer and cleanup from the root of its hierarchy.
+      if superclass == nil {
+        printer.print(
+          """
+          /** Pointer to the "self". */
+          private final long selfPointer;
 
-        /** Tracks whether this instance has been destroyed; doubles as the destroyed-state holder. */
-        private final SwiftInstanceCleanup $cleanup;
+          /** Tracks whether this instance has been destroyed; doubles as the destroyed-state holder. */
+          private final SwiftInstanceCleanup $cleanup;
 
-        public long $memoryAddress() {
-          return this.selfPointer;
-        }
+          public long $memoryAddress() {
+            return this.selfPointer;
+          }
 
-        @Override
-        public SwiftInstanceCleanup $cleanup() {
-          return $cleanup;
-        }
-        """
-      )
+          @Override
+          public SwiftInstanceCleanup $cleanup() {
+            return $cleanup;
+          }
+          """
+        )
+      }
 
       if isEffectivelyGeneric {
         printer.print("/** Pointer to the metatype of Self */")
@@ -444,6 +455,8 @@ extension JNISwift2JavaGenerator {
     _ printer: inout JavaPrinter,
     javaName: String,
     pointerParams: [String],
+    isExtendable: Bool = false,
+    hasSuperclass: Bool = false,
   ) {
     printer.print(
       """
@@ -456,7 +469,17 @@ extension JNISwift2JavaGenerator {
       """
     )
     let pointerArg = pointerParams.map { "long \($0)" }.joined(separator: ", ")
-    printer.printBraceBlock("private \(javaName)(\(pointerArg), SwiftArena swiftArena)") { printer in
+    // Subclasses of an extendable class call this constructor.
+    let visibility = isExtendable ? "protected" : "private"
+    if hasSuperclass {
+      // The root class of the hierarchy stores the pointer and registers the cleanup, whose destroy
+      // function uses the (overridden) `$typeMetadataAddress()` of this class.
+      printer.printBraceBlock("\(visibility) \(javaName)(\(pointerArg), SwiftArena swiftArena)") { printer in
+        printer.print("super(\(pointerParams.joined(separator: ", ")), swiftArena);")
+      }
+      return
+    }
+    printer.printBraceBlock("\(visibility) \(javaName)(\(pointerArg), SwiftArena swiftArena)") { printer in
       for param in pointerParams {
         printer.print(
           """
@@ -483,9 +506,18 @@ extension JNISwift2JavaGenerator {
     genericClause: String,
     pointerParams: [String],
     docSummary: String,
+    subclasses: [ExtractedNominalType] = [],
   ) {
     let pointerArg = pointerParams.map { "long \($0)" }.joined(separator: ", ")
     let pointerArgNames = pointerParams.joined(separator: ", ")
+    // A class with extracted subclasses wraps an instance in the Java class of its dynamic type.
+    let dynamicDispatch =
+      subclasses.isEmpty
+      ? ""
+      : (["long dynamicType$ = \(javaName).$dynamicTypeMetadataAddress(selfPointer);"]
+        + subclasses.map { subclass in
+          "if (dynamicType$ == \(subclass.effectiveJavaName).$typeMetadataAddressDowncall()) { return \(subclass.effectiveJavaName).wrapMemoryAddressUnsafe(\(pointerArgNames), swiftArena); }"
+        }).joined(separator: "\n  ") + "\n  "
     printer.print(
       """
       /**
@@ -498,14 +530,17 @@ extension JNISwift2JavaGenerator {
        * </ul>
        */
       public static\(genericClause) \(javaName)\(genericClause) wrapMemoryAddressUnsafe(\(pointerArg), SwiftArena swiftArena) {
-        return new \(javaName)\(genericClause)(\(pointerArgNames), swiftArena);
+        \(dynamicDispatch)return new \(javaName)\(genericClause)(\(pointerArgNames), swiftArena);
       }
 
       public static\(genericClause) \(javaName)\(genericClause) wrapMemoryAddressUnsafe(\(pointerArg)) {
-        return new \(javaName)\(genericClause)(\(pointerArgNames), SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA);
+        \(subclasses.isEmpty ? "return new \(javaName)\(genericClause)(\(pointerArgNames), " : "return wrapMemoryAddressUnsafe(\(pointerArgNames), ")SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA);
       }
       """
     )
+    if !subclasses.isEmpty {
+      printer.print("private static native long $dynamicTypeMetadataAddress(long selfPointer);")
+    }
   }
 
   /// Prints common Swift object methods such as `equals`, `hashCode` etc.
@@ -599,14 +634,24 @@ extension JNISwift2JavaGenerator {
     if decl.parent != nil {
       modifiers.append("static")
     }
-    modifiers.append("final")
+    if !self.isExtendableClass(decl) {
+      modifiers.append("final")
+    }
     let isErrorType = self.isSwiftErrorType(decl)
-    // Error types get `JNISwiftInstance` from their `SwiftError` base class.
-    var implements = isErrorType ? [] : ["JNISwiftInstance"]
+    let superclass = self.extractedSuperclass(of: decl)
+    // Error types get `JNISwiftInstance` from their `SwiftError` base class, subclasses from their superclass.
+    var implements = isErrorType || superclass != nil ? [] : ["JNISwiftInstance"]
     // Only protocols that were actually extracted have a generated Java interface to implement.
     implements += self.inheritedProtocols(of: decl).map(\.effectiveJavaSimpleName)
     // Fully qualified so a user type named `SwiftError` cannot shadow it.
-    let extendsClause = isErrorType ? " extends org.swift.swiftkit.core.SwiftError" : ""
+    let extendsClause =
+      if isErrorType {
+        " extends org.swift.swiftkit.core.SwiftError"
+      } else if let superclass {
+        " extends \(superclass.effectiveJavaName)"
+      } else {
+        ""
+      }
     let implementsClause = implements.isEmpty ? "" : " implements \(implements.joined(separator: .comma))"
     if isErrorType {
       printer.print("@SuppressWarnings(\"serial\")")
@@ -1090,7 +1135,9 @@ extension JNISwift2JavaGenerator {
         printer.print("return this.selfTypePointer;")
       }
     } else {
-      printer.print("private static native long $typeMetadataAddressDowncall();")
+      // Package-private for a subclass, so its base class can match it when wrapping an instance.
+      let visibility = self.extractedSuperclass(of: type) == nil ? "private " : ""
+      printer.print("\(visibility)static native long $typeMetadataAddressDowncall();")
       printer.print("@Override")
       printer.printBraceBlock("public long $typeMetadataAddress()") { printer in
         // INFO: We are omitting `CallTraces.traceDowncall` here.

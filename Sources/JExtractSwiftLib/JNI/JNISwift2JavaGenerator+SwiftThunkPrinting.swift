@@ -1185,6 +1185,27 @@ extension JNISwift2JavaGenerator {
         """
       )
     }
+
+    // A class with extracted subclasses: Java asks for an instance's dynamic type to pick the
+    // most specific Java class when wrapping it.
+    if !self.extractedSubclasses(of: type).isEmpty {
+      printer.println()
+      printCDecl(
+        &printer,
+        javaMethodName: "$dynamicTypeMetadataAddress",
+        parentName: type.effectiveJavaTypeName,
+        parameters: [JavaParameter(name: "selfPointer", type: .long)],
+        resultType: .long,
+      ) { printer in
+        printer.print(
+          """
+          let self$ = UnsafeMutablePointer<\(type.effectiveSwiftTypeName)>(bitPattern: Int(Int64(fromJNI: selfPointer, in: environment)))!
+          let metadataPointer = unsafeBitCast(type(of: self$.pointee), to: UnsafeRawPointer.self)
+          return Int64(Int(bitPattern: metadataPointer)).getJNIValue(in: environment)
+          """
+        )
+      }
+    }
   }
 
   /// Prints thunks for specific known types like Foundation.Date, Foundation.Data
