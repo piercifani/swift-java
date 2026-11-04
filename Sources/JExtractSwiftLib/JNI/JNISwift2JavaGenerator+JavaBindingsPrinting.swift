@@ -210,11 +210,34 @@ extension JNISwift2JavaGenerator {
       // (`supportedProtocolRequirements(of:)`) so the interface never
       // declares a requirement (e.g. a property setter) that the box
       // doesn't implement.
+      let isJavaImplementable = self.interfaceProtocolWrappers.keys.contains(decl)
       for requirement in self.supportedProtocolRequirements(of: decl) {
-        printFunctionDowncallMethods(&printer, requirement, skipMethodBody: true)
+        if !isJavaImplementable, self.hasProtocolExtensionImplementation(requirement, in: decl) {
+          printProtocolDefaultMethod(&printer, decl, requirement)
+        } else {
+          printFunctionDowncallMethods(&printer, requirement, skipMethodBody: true)
+        }
         printer.println()
       }
     }
+  }
+
+  /// A protocol member implemented in a protocol extension is a `default` method that calls the Swift
+  /// implementation through the existential box, so the classes of conforming Swift types, which don't
+  /// declare the member themselves, still implement the interface.
+  private func printProtocolDefaultMethod(
+    _ printer: inout JavaPrinter,
+    _ decl: ExtractedNominalType,
+    _ member: ExtractedFunc
+  ) {
+    // Translated like the box's method (`printExistentialBoxMethod`), whose native method it calls.
+    guard var translated = try? self.javaTranslator.translate(member) else {
+      return
+    }
+    translated.parentName = SwiftQualifiedTypeName(decl.swiftNominal.javaExistentialBoxName)
+
+    printer.printSeparator(member.displayName)
+    printJavaBindingWrapperMethod(&printer, translated, importedFunc: member, skipMethodBody: false, isInterfaceDefault: true)
   }
 
   /// Prints the full `.java` file for a protocol's existential box — the
@@ -307,7 +330,8 @@ extension JNISwift2JavaGenerator {
     printer.printSeparator(method.displayName)
     // We pass importedFunc as nil because we are not printing based on the protocol
     // but rather as the concrete box class.
-    printJavaBindingWrapperMethod(&printer, translated, importedFunc: nil, skipMethodBody: false)
+    // Package-private natives: the protocol's `default` methods call them too.
+    printJavaBindingWrapperMethod(&printer, translated, importedFunc: nil, skipMethodBody: false, privateNative: false)
   }
 
   private func printConcreteType(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
@@ -879,8 +903,13 @@ extension JNISwift2JavaGenerator {
     _ translatedDecl: TranslatedFunctionDecl,
     importedFunc: ExtractedFunc? = nil,
     skipMethodBody: Bool,
+    isInterfaceDefault: Bool = false,
+    privateNative: Bool = true,
   ) {
     var modifiers = ["public"]
+    if isInterfaceDefault {
+      modifiers.append("default")
+    }
     if translatedDecl.isStatic {
       modifiers.append("static")
     }
@@ -930,7 +959,7 @@ extension JNISwift2JavaGenerator {
       var modifiers = modifiers
 
       // If we are a protocol, we emit this as default method
-      if isParentProtocol {
+      if isParentProtocol && !isInterfaceDefault {
         modifiers.insert("default", at: 1)
       }
 
@@ -969,11 +998,18 @@ extension JNISwift2JavaGenerator {
         printDowncall(&printer, translatedDecl)
       }
 
-      printNativeFunction(&printer, translatedDecl)
+      // An interface can't declare native methods; a `default` method calls the box's.
+      if !isInterfaceDefault {
+        printNativeFunction(&printer, translatedDecl, isPrivate: privateNative)
+      }
     }
   }
 
-  private func printNativeFunction(_ printer: inout JavaPrinter, _ translatedDecl: TranslatedFunctionDecl) {
+  private func printNativeFunction(
+    _ printer: inout JavaPrinter,
+    _ translatedDecl: TranslatedFunctionDecl,
+    isPrivate: Bool = true
+  ) {
     let nativeSignature = translatedDecl.nativeFunctionSignature
     let resultType = nativeSignature.result.javaType
     var parameters = nativeSignature.parameters.flatMap(\.parameters)
@@ -989,7 +1025,8 @@ extension JNISwift2JavaGenerator {
       "\(javaParameter.type) \(javaParameter.name)"
     }.joined(separator: .comma)
 
-    printer.print("private static native \(resultType) \(translatedDecl.nativeFunctionName)(\(renderedParameters));")
+    let visibility = isPrivate ? "private " : ""
+    printer.print("\(visibility)static native \(resultType) \(translatedDecl.nativeFunctionName)(\(renderedParameters));")
   }
 
   private func printDowncall(
