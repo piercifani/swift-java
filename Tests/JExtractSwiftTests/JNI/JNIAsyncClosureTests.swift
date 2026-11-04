@@ -75,8 +75,9 @@ struct JNIAsyncClosureTests {
         }
         """,
         """
-        let future$ = try! javaInterface_work$call.dynamicJavaMethodCall(methodName: "apply", arguments: _0Class.wrapMemoryAddressUnsafe(Int64(Int(bitPattern: _0Pointer))), resultType: JavaCompletableFuture?.self)
-        guard let future$ else { fatalError("Upcall to apply unexpectedly returned a null future") }
+        let returnedFuture$ = try! javaInterface_work$call.dynamicJavaMethodCall(methodName: "apply", arguments: _0Class.wrapMemoryAddressUnsafe(Int64(Int(bitPattern: _0Pointer))), resultType: JavaCompletableFuture?.self)
+        guard let returnedFuture$ else { fatalError("Upcall to apply unexpectedly returned a null future") }
+        nonisolated(unsafe) let future$ = returnedFuture$
         _ = try! await _awaitCompletableFuture(future$)
         """,
         // A primitive result, read on the thread the task resumed on.
@@ -93,7 +94,7 @@ struct JNIAsyncClosureTests {
       .swift,
       detectChunkByInitialLines: 1,
       expectedChunks: [
-        "let future$ = try javaInterface_fetch$call.dynamicJavaMethodCall(methodName: \"apply\", arguments: _0, resultType: JavaCompletableFuture?.self)",
+        "let returnedFuture$ = try javaInterface_fetch$call.dynamicJavaMethodCall(methodName: \"apply\", arguments: _0, resultType: JavaCompletableFuture?.self)",
         "let result$ = try await _awaitCompletableFuture(future$)",
         "let result$MemoryAddress$ = unwrapped$.as(JavaJNISwiftInstance.self)!.memoryAddress()",
       ]

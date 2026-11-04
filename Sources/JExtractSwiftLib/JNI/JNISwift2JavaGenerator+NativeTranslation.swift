@@ -2029,11 +2029,14 @@ extension JNISwift2JavaGenerator {
           let tryKeyword = fn.isThrowing ? "try" : "try!"
           let arguments = upcallArguments.isEmpty ? "" : "arguments: \(upcallArguments.joined(separator: .comma)), "
           resultPrinter.print(
-            "let future$ = \(tryKeyword) \(callInterfaceVar).dynamicJavaMethodCall(methodName: \"\(syntheticFunction.methodName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
+            "let returnedFuture$ = \(tryKeyword) \(callInterfaceVar).dynamicJavaMethodCall(methodName: \"\(syntheticFunction.methodName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
           )
           resultPrinter.print(
-            "guard let future$ else { fatalError(\"Upcall to \(syntheticFunction.methodName) unexpectedly returned a null future\") }"
+            "guard let returnedFuture$ else { fatalError(\"Upcall to \(syntheticFunction.methodName) unexpectedly returned a null future\") }"
           )
+          // A `@MainActor` closure hands the future to the nonisolated `_awaitCompletableFuture`; nothing
+          // else uses it.
+          resultPrinter.print("nonisolated(unsafe) let future$ = returnedFuture$")
           if isVoid {
             resultConverted = "_ = \(tryKeyword) await _awaitCompletableFuture(future$)"
           } else {
