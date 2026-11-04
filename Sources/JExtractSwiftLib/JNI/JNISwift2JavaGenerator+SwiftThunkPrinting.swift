@@ -362,8 +362,11 @@ extension JNISwift2JavaGenerator {
     if !type.isSpecialization && !isNeverLike {
       printJNICache(&printer, type)
       printer.println()
-      printNominalJavaBridge(&printer, type)
-      printer.println()
+      // The bridge is public: only the module that declares the type prints it, not one extending it.
+      if type.swiftNominal.moduleName == swiftModuleName {
+        printNominalJavaBridge(&printer, type)
+        printer.println()
+      }
 
       if self.isSwiftErrorType(type) && !self.inheritsThrowableErrorConformance(type) {
         printThrowableErrorConformance(&printer, type)
