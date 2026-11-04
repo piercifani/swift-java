@@ -16,6 +16,7 @@ import CodePrinting
 import SwiftExtract
 import SwiftJavaConfigurationShared
 import SwiftJavaJNICore
+import SwiftSyntax
 
 /// A table that where keys are Swift class names and the values are
 /// the fully qualified canoical names.
@@ -265,9 +266,43 @@ extension JNISwift2JavaGenerator {
   /// (getters/setters), excluding statics and anything whose signature
   /// doesn't translate (e.g. referencing `Self`/associated types).
   func supportedProtocolRequirements(of type: ExtractedNominalType) -> [ExtractedFunc] {
-    (type.methods + type.variables).filter { requirement in
+    let members = (type.methods + type.variables).filter { requirement in
       !requirement.isStatic && !requirement.isClass && self.translatedDecl(for: requirement) != nil
     }
+    // A protocol extension's default for a requirement implements that requirement; it isn't
+    // another member.
+    let requirementKeys = Set(members.filter { !isProtocolExtensionMember($0) }.map(protocolMemberKey))
+    return members.filter { !isProtocolExtensionMember($0) || !requirementKeys.contains(protocolMemberKey($0)) }
+  }
+
+  /// Whether a protocol member has a Swift implementation every conformer gets: it's declared in a
+  /// protocol extension, or it's a requirement with a default in one.
+  func hasProtocolExtensionImplementation(_ member: ExtractedFunc, in type: ExtractedNominalType) -> Bool {
+    if isProtocolExtensionMember(member) {
+      return true
+    }
+    let key = protocolMemberKey(member)
+    return (type.methods + type.variables).contains { isProtocolExtensionMember($0) && protocolMemberKey($0) == key }
+  }
+
+  /// Whether `member` is declared in a protocol extension rather than in the protocol itself.
+  private func isProtocolExtensionMember(_ member: ExtractedFunc) -> Bool {
+    var node: Syntax? = Syntax(fromProtocol: member.swiftDecl)
+    while let current = node {
+      if current.is(ExtensionDeclSyntax.self) {
+        return true
+      }
+      if current.is(ProtocolDeclSyntax.self) {
+        return false
+      }
+      node = current.parent
+    }
+    return false
+  }
+
+  private func protocolMemberKey(_ member: ExtractedFunc) -> String {
+    let parameters = member.functionSignature.parameters.map { "\($0.argumentLabel ?? "_"):\($0.type)" }
+    return "\(member.apiKind) \(member.name)(\(parameters.joined(separator: ",")))"
   }
 
   /// All wrappable requirements for `type` (a protocol), including those

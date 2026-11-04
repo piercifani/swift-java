@@ -477,7 +477,7 @@ struct JNIProtocolTests {
           public java.lang.String greeting() {
             return GreeterBox.$greeting(this.$memoryAddress(), this.$typeMetadataAddress());
           }
-          private static native java.lang.String $greeting(long selfPointer, long selfTypePointer);
+          static native java.lang.String $greeting(long selfPointer, long selfTypePointer);
         """,
         """
         public static Greeter makeGreeter(SwiftArena swiftArena) {
@@ -638,7 +638,7 @@ struct JNIProtocolTests {
           public long load() {
             return LoaderBox.$load(this.$memoryAddress(), this.$typeMetadataAddress());
           }
-          private static native long $load(long selfPointer, long selfTypePointer);
+          static native long $load(long selfPointer, long selfTypePointer);
         """,
       ],
       notExpectedChunks: [
@@ -663,13 +663,13 @@ struct JNIProtocolTests {
           public void childMethod() {
             ChildProtocolBox.$childMethod(this.$memoryAddress(), this.$typeMetadataAddress());
           }
-          private static native void $childMethod(long selfPointer, long selfTypePointer);
+          static native void $childMethod(long selfPointer, long selfTypePointer);
         """,
         """
           public void parentMethod() {
             ChildProtocolBox.$parentMethod(this.$memoryAddress(), this.$typeMetadataAddress());
           }
-          private static native void $parentMethod(long selfPointer, long selfTypePointer);
+          static native void $parentMethod(long selfPointer, long selfTypePointer);
         """,
       ]
     )
