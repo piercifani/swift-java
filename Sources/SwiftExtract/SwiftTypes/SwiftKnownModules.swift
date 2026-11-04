@@ -106,6 +106,7 @@ private let swiftSourceFile: SourceFileSyntax = """
 
   // `_Concurrency` in reality; modeled here with the other standard library types.
   public struct AsyncStream<Element> {}
+  public struct AsyncThrowingStream<Element, Failure> {}
 
   public protocol Error {}
 
