@@ -985,6 +985,15 @@ extension JNISwift2JavaGenerator {
           throw JavaTranslationError.unsupportedSwiftType(known: .array(elementType))
         }
 
+        if let (leaf, depth) = jextractedArrayLeaf(of: knownTypes.arraySugar(elementType)) {
+          // Rows of jextracted values cross as `long[][]`: allocate each value and pass its pointer.
+          return NativeResult(
+            javaType: .array(nestedJavaArray(of: .long, depth: depth - 1)),
+            conversion: .getJNIValue(allocatingValues(.placeholder, depth: depth, swiftType: leaf)),
+            outParameters: []
+          )
+        }
+
         let innerResult = try translateArrayResult(elementType: innerElement, resultName: resultName)
         return NativeResult(
           javaType: .array(innerResult.javaType),
@@ -1061,6 +1070,22 @@ extension JNISwift2JavaGenerator {
           throw JavaTranslationError.unsupportedSwiftType(elementType)
         }
 
+        if let (leaf, depth) = jextractedArrayLeaf(of: knownTypes.arraySugar(elementType)) {
+          // Rows of jextracted values cross as `long[][]`: decode the pointers, then read each value.
+          return NativeParameter(
+            parameters: [
+              JavaParameter(name: parameterName, type: .array(nestedJavaArray(of: .long, depth: depth - 1)))
+            ],
+            conversion: readingPointers(
+              .initFromJNI(.placeholder, swiftType: nestedSwiftArray(of: knownTypes.int64, depth: depth)),
+              depth: depth,
+              swiftType: leaf
+            ),
+            indirectConversion: nil,
+            conversionCheck: nil
+          )
+        }
+
         let innerParam = try translateArrayParameter(elementType: innerElement, parameterName: parameterName)
         guard case .concrete(let innerJavaType) = innerParam.parameters.first?.type else {
           throw JavaTranslationError.unsupportedSwiftType(elementType)
@@ -1126,6 +1151,63 @@ extension JNISwift2JavaGenerator {
       default:
         throw JavaTranslationError.unsupportedSwiftType(elementType)
       }
+    }
+
+    /// The element type and nesting depth of an array whose innermost elements are jextracted types:
+    /// `[[T]]` is `(T, 2)`. `nil` for other arrays, which convert through `JavaValue`.
+    func jextractedArrayLeaf(of swiftType: SwiftType) -> (SwiftType, Int)? {
+      guard case .nominal(let nominalType) = swiftType else { return nil }
+      if case .array(let element) = nominalType.asKnownType {
+        return jextractedArrayLeaf(of: element).map { ($0.0, $0.1 + 1) }
+      }
+      guard nominalType.nominalTypeDecl.knownTypeKind == nil, !nominalType.isSwiftJavaWrapper,
+        !nominalType.isProtocol
+      else {
+        return nil
+      }
+      return (swiftType, 0)
+    }
+
+    func nestedSwiftArray(of element: SwiftType, depth: Int) -> SwiftType {
+      depth == 0 ? element : knownTypes.arraySugar(nestedSwiftArray(of: element, depth: depth - 1))
+    }
+
+    func nestedJavaArray(of element: JavaType, depth: Int) -> JavaType {
+      depth == 0 ? element : .array(nestedJavaArray(of: element, depth: depth - 1))
+    }
+
+    /// `pointers.map { $0.map { pointer in pointer.pointee } }`, `depth` levels deep.
+    func readingPointers(
+      _ pointers: NativeSwiftConversionStep,
+      depth: Int,
+      swiftType: SwiftType
+    )
+      -> NativeSwiftConversionStep
+    {
+      let argument = "pointer\(depth)$"
+      let body: NativeSwiftConversionStep =
+        depth == 1
+        ? .pointee(
+          .extractSwiftValue(.constant(argument), swiftType: swiftType, allowNil: false, convertLongFromJNI: false)
+        )
+        : readingPointers(.constant(argument), depth: depth - 1, swiftType: swiftType)
+      return .method(pointers, function: "map", arguments: [(nil, .closure(args: [argument], body: body))])
+    }
+
+    /// `values.map { $0.map { value in <allocate value> } }`, `depth` levels deep.
+    func allocatingValues(
+      _ values: NativeSwiftConversionStep,
+      depth: Int,
+      swiftType: SwiftType
+    )
+      -> NativeSwiftConversionStep
+    {
+      let argument = "object\(depth)$"
+      let body: NativeSwiftConversionStep =
+        depth == 1
+        ? .allocateSwiftValue(.constant(argument), name: argument, swiftType: swiftType)
+        : allocatingValues(.constant(argument), depth: depth - 1, swiftType: swiftType)
+      return .method(values, function: "map", arguments: [(nil, .closure(args: [argument], body: body))])
     }
 
     func translateDictionaryParameter(
