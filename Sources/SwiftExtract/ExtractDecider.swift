@@ -46,10 +46,18 @@ public protocol ExtractDecider {
   /// Whether `type`, from this module or a dependency, is exported. A declaration whose signature uses a
   /// type that isn't exported is skipped, since the generated code would refer to a type that doesn't exist.
   func isExported(_ type: SwiftNominalTypeDeclaration) -> Bool
+
+  /// Whether a Foundation type the module uses, such as `Data`, `Date` or `URL`, is extracted as a type of
+  /// its own. Return `false` when the target language represents values of `kind` with one of its own types.
+  func shouldExtractFoundationType(_ kind: SwiftKnownTypeDeclKind) -> Bool
 }
 
 extension ExtractDecider {
   public func mayExtractMembers(of extensionDecl: ExtensionDeclSyntax) -> Bool {
+    true
+  }
+
+  public func shouldExtractFoundationType(_ kind: SwiftKnownTypeDeclKind) -> Bool {
     true
   }
 

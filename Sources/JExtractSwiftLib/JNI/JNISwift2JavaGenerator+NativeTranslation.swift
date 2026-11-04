@@ -165,7 +165,12 @@ extension JNISwift2JavaGenerator {
               conversionCheck: nil
             )
 
-          case .foundationDate, .essentialsDate, .foundationData, .essentialsData, .foundationURL, .essentialsURL:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationURL where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsURL where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
@@ -557,11 +562,13 @@ extension JNISwift2JavaGenerator {
 
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
           switch knownType {
-          case .foundationDate, .essentialsDate:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
-          case .foundationData, .essentialsData:
+          case .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
@@ -867,7 +874,12 @@ extension JNISwift2JavaGenerator {
               resultName: resultName
             )
 
-          case .foundationDate, .essentialsDate, .foundationData, .essentialsData, .foundationURL, .essentialsURL:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationURL where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsURL where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
