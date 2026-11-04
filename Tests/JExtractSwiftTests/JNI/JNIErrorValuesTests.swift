@@ -65,4 +65,26 @@ struct JNIErrorValuesTests {
       ]
     )
   }
+
+  @Test
+  func enumCasePayload() throws {
+    let source = """
+      public enum ConnectError: Error {
+        case failed(underlying: Error)
+        case offline
+      }
+      """
+    try assertOutput(
+      input: source,
+      .jni,
+      .java,
+      expectedChunks: [
+        "record Failed(java.lang.Throwable underlying) implements Case {}",
+        "public java.util.Optional<Case.Failed> getAsFailed() {",
+      ],
+      notExpectedChunks: [
+        "new Case.Failed()"
+      ]
+    )
+  }
 }

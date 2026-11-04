@@ -44,4 +44,10 @@ class ErrorsTest {
         assertFalse(Uploads.isRejected(kotlinError))
         assertTrue(Uploads.describe(kotlinError).contains("disk full"))
     }
+
+    @Test
+    fun enumCasePayload() {
+        val gaveUp = Uploads.retry("a").getAsGaveUp()!!.get()
+        assertIs<UploadError>(gaveUp.underlying)
+    }
 }

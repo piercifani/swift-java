@@ -1480,6 +1480,10 @@ extension JNISwift2JavaGenerator {
       genericParameters: [SwiftGenericParameterDeclaration],
       genericRequirements: [SwiftGenericRequirement],
     ) throws -> JavaType {
+      if swiftType.isSwiftError {
+        return .javaLangThrowable
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName

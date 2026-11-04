@@ -16,6 +16,11 @@ public enum UploadError: Error {
   case rejected
 }
 
+/// An error that carries the error that caused it.
+public enum RetryError: Error {
+  case gaveUp(underlying: Error)
+}
+
 /// Swift errors as values: Kotlin `Throwable`s.
 public enum Uploads {
   /// A completion handler taking an optional error.
@@ -33,5 +38,9 @@ public enum Uploads {
 
   public static func describe(_ error: Error) -> String {
     "\(error)"
+  }
+
+  public static func retry(_ id: String) -> RetryError {
+    .gaveUp(underlying: UploadError.rejected)
   }
 }
