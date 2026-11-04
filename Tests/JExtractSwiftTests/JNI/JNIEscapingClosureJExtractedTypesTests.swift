@@ -261,4 +261,16 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  @Test
+  func closureTakingArrayOfJextractedType_printsItsJavaClass() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func onSelect(_ cb: @escaping ([Item]) -> Void) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        #"@JavaClass("com.example.swift.Item")"#
+      ]
+    )
+  }
 }

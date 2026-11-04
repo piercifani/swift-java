@@ -36,7 +36,7 @@ extension JNISwift2JavaGenerator {
       if !config.effectiveEnableJavaCallbacks {
         let fn = closureTy.functionType
         for type in fn.parameters.map(\.type) + [fn.resultType] {
-          if let nominal = jextractedNominal(type) ?? optionalWrapped(type).flatMap(jextractedNominal) {
+          for nominal in jextractedNominals(in: type) {
             printMinimalJavaClassWrapper(&printer, nominal)
           }
         }
@@ -58,6 +58,23 @@ extension JNISwift2JavaGenerator {
 
   private func javaPackage(of decl: SwiftNominalTypeDeclaration) -> String? {
     decl.moduleName == swiftModuleName ? javaPackage : moduleJavaPackages[decl.moduleName]
+  }
+
+  /// The jextracted types a value of `type` crosses into Java as: the type itself, or the elements of an
+  /// optional or an array of them.
+  private func jextractedNominals(in type: SwiftType) -> [SwiftNominalTypeDeclaration] {
+    if let nominal = jextractedNominal(type) {
+      return [nominal]
+    }
+    guard case .nominal(let nominal) = type else {
+      return []
+    }
+    switch nominal.asKnownType {
+    case .optional(let wrapped), .array(let wrapped):
+      return jextractedNominals(in: wrapped)
+    default:
+      return []
+    }
   }
 
   private func optionalWrapped(_ type: SwiftType) -> SwiftType? {
