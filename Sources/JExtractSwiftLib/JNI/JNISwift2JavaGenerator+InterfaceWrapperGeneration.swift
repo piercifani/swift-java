@@ -414,6 +414,10 @@ extension JNISwift2JavaGenerator {
     }
 
     private func translateOptionalResult(wrappedType: SwiftType, methodName: String) throws -> UpcallConversionStep {
+      // `JavaOptional` holds a Java object; an array isn't one.
+      if case .nominal(let nominal) = wrappedType, case .array = nominal.asKnownType {
+        throw JavaTranslationError.unsupportedSwiftType(wrappedType)
+      }
       // The `fromJavaOptional` will handle the nullability
       let wrappedConversion = try translateResult(
         type: wrappedType,
