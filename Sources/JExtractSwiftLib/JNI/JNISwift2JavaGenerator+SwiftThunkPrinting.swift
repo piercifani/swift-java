@@ -750,7 +750,14 @@ extension JNISwift2JavaGenerator {
 
     for (idx, parameter) in nativeSignature.parameters.enumerated() {
       let javaParameterName = translatedDecl.translatedFunctionSignature.parameters[idx].parameter.name
-      let lowered = parameter.conversion.render(&printer, javaParameterName)
+      var lowered = parameter.conversion.render(&printer, javaParameterName)
+      // An `@autoclosure` parameter takes an expression, which it wraps in a closure again: calling the
+      // lowered closure there runs it only when the callee evaluates the argument. The closure is built
+      // once, since the callee may evaluate the argument more than once.
+      if case .function(let functionType) = decl.functionSignature.parameters[idx].type, functionType.isAutoclosure {
+        printer.print("let \(javaParameterName)$autoclosure = \(lowered)")
+        lowered = "\(javaParameterName)$autoclosure()"
+      }
       arguments.append(lowered)
 
       parameter.indirectConversion.flatMap {

@@ -28,6 +28,8 @@ public struct SwiftFunctionType: Equatable {
   public var isSendable: Bool = false
   /// Whether the function type is isolated to the main actor (`@MainActor`).
   public var isMainActorIsolated: Bool = false
+  /// `@autoclosure`: a call passes an expression of the result type, not a closure.
+  public var isAutoclosure: Bool = false
 
   public var effectSpecifiers: [SwiftEffectSpecifier] = []
 

@@ -131,4 +131,12 @@ public func transformStruct(_ value: MySwiftStruct, _ f: (MySwiftStruct) -> MySw
 public enum ClosureConstants {
   /// No type annotation: inferred as `Int` from the literal.
   public static let answer = 42
+
+/// `@autoclosure` parameters take a Java lambda; Swift evaluates it only if and when it needs the value.
+public func evaluate(_ value: @autoclosure () -> Int64) -> Int64 {
+  value()
+}
+
+public func evaluateTwice(_ value: @autoclosure @escaping () -> Int64) -> Int64 {
+  value() + value()
 }

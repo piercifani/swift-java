@@ -440,6 +440,8 @@ extension SwiftType {
         switch attribute.attributeName.trimmedDescription {
         case "escaping":
           functionType.isEscaping = true
+        case "autoclosure":
+          functionType.isAutoclosure = true
         case "Sendable":
           functionType.isSendable = true
         case "MainActor", "_Concurrency.MainActor":

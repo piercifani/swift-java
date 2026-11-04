@@ -200,4 +200,16 @@ public class ClosuresTest {
     void unannotatedStaticLet() {
         assertEquals(42, ClosureConstants.getAnswer());
     }
+
+    @Test
+    void autoclosure() {
+        assertEquals(42, MySwiftLibrary.evaluate(() -> 42));
+    }
+
+    @Test
+    void escapingAutoclosure() {
+        int[] calls = new int[1];
+        assertEquals(42, MySwiftLibrary.evaluateTwice(() -> { calls[0]++; return 21; }));
+        assertEquals(2, calls[0]);
+    }
 }
