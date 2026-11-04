@@ -312,6 +312,10 @@ extension JNISwift2JavaGenerator {
 
   private func printConcreteType(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
     printNominal(&printer, decl) { printer in
+      if self.isJavaEnum(decl) {
+        printer.print(decl.cases.map { Self.javaEnumConstantName($0) }.joined(separator: ", ") + ";")
+        printer.println()
+      }
       printer.print(
         """
         static final java.lang.String LIB_NAME = "\(config.nativeLibraryName ?? swiftModuleName)";
@@ -365,44 +369,48 @@ extension JNISwift2JavaGenerator {
       }
       let javaName = decl.effectiveJavaSimpleName
       let superclass = self.extractedSuperclass(of: decl)
-      printDesignatedConstructor(
-        &printer,
-        javaName: javaName,
-        pointerParams: swiftPointerParams,
-        isExtendable: self.isExtendableClass(decl),
-        hasSuperclass: superclass != nil
-      )
-      printer.println()
-      let genericClause = decl.javaGenericClause
-      printWrapMemoryAddressUnsafeFactory(
-        &printer,
-        javaName: javaName,
-        genericClause: genericClause,
-        pointerParams: swiftPointerParams,
-        docSummary: "Assume that the passed {@code long} represents a memory address of a {@link \(javaName)}.",
-        subclasses: self.extractedSubclasses(of: decl)
-      )
-
-      // A subclass inherits the pointer and cleanup from the root of its hierarchy.
-      if superclass == nil {
-        printer.print(
-          """
-          /** Pointer to the "self". */
-          private final long selfPointer;
-
-          /** Tracks whether this instance has been destroyed; doubles as the destroyed-state holder. */
-          private final SwiftInstanceCleanup $cleanup;
-
-          public long $memoryAddress() {
-            return this.selfPointer;
-          }
-
-          @Override
-          public SwiftInstanceCleanup $cleanup() {
-            return $cleanup;
-          }
-          """
+      if self.isJavaEnum(decl) {
+        printJavaEnumSwiftValues(&printer, decl)
+      } else {
+        printDesignatedConstructor(
+          &printer,
+          javaName: javaName,
+          pointerParams: swiftPointerParams,
+          isExtendable: self.isExtendableClass(decl),
+          hasSuperclass: superclass != nil
         )
+        printer.println()
+        let genericClause = decl.javaGenericClause
+        printWrapMemoryAddressUnsafeFactory(
+          &printer,
+          javaName: javaName,
+          genericClause: genericClause,
+          pointerParams: swiftPointerParams,
+          docSummary: "Assume that the passed {@code long} represents a memory address of a {@link \(javaName)}.",
+          subclasses: self.extractedSubclasses(of: decl)
+        )
+
+        // A subclass inherits the pointer and cleanup from the root of its hierarchy.
+        if superclass == nil {
+          printer.print(
+            """
+            /** Pointer to the "self". */
+            private final long selfPointer;
+
+            /** Tracks whether this instance has been destroyed; doubles as the destroyed-state holder. */
+            private final SwiftInstanceCleanup $cleanup;
+
+            public long $memoryAddress() {
+              return this.selfPointer;
+            }
+
+            @Override
+            public SwiftInstanceCleanup $cleanup() {
+              return $cleanup;
+            }
+            """
+          )
+        }
       }
 
       if isEffectivelyGeneric {
@@ -545,21 +553,24 @@ extension JNISwift2JavaGenerator {
 
   /// Prints common Swift object methods such as `equals`, `hashCode` etc.
   private func printSwiftInstanceObjectMethods(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
-    printer.print(
-      """
-      public boolean equals(Object obj) {
-        if (obj instanceof JNISwiftInstance rhs) {
-          return SwiftObjects.equals(this.$memoryAddress(), this.$typeMetadataAddress(), rhs.$memoryAddress(), rhs.$typeMetadataAddress());
+    // A Java enum has one constant per case, so its final `equals` and `hashCode` already match Swift's.
+    if !self.isJavaEnum(decl) {
+      printer.print(
+        """
+        public boolean equals(Object obj) {
+          if (obj instanceof JNISwiftInstance rhs) {
+            return SwiftObjects.equals(this.$memoryAddress(), this.$typeMetadataAddress(), rhs.$memoryAddress(), rhs.$typeMetadataAddress());
+          }
+          return false;
         }
-        return false;
-      }
 
-      public int hashCode() {
-        return SwiftObjects.hashCode(this.$memoryAddress(), this.$typeMetadataAddress());
-      }
+        public int hashCode() {
+          return SwiftObjects.hashCode(this.$memoryAddress(), this.$typeMetadataAddress());
+        }
 
-      """
-    )
+        """
+      )
+    }
     // Error types inherit `Throwable.toString()`, which prints the class name followed by the Swift description.
     if !self.isSwiftErrorType(decl) {
       printer.print(
@@ -619,6 +630,10 @@ extension JNISwift2JavaGenerator {
     for i in JNISwift2JavaGenerator.defaultJavaImports {
       printer.print("import \(i);")
     }
+    // A single-type import wins over `org.swift.swiftkit.core.annotations.*`.
+    for annotation in [config.nullableAnnotation, config.nonNullAnnotation].compactMap({ $0 }) {
+      printer.print("import \(annotation);")
+    }
     printer.print("")
   }
 
@@ -634,7 +649,8 @@ extension JNISwift2JavaGenerator {
     if decl.parent != nil {
       modifiers.append("static")
     }
-    if !self.isExtendableClass(decl) {
+    let isJavaEnum = self.isJavaEnum(decl)
+    if !self.isExtendableClass(decl) && !isJavaEnum {
       modifiers.append("final")
     }
     let isErrorType = self.isSwiftErrorType(decl)
@@ -659,10 +675,68 @@ extension JNISwift2JavaGenerator {
     // Specialized types are concrete — no generic clause on the Java side
     let genericClause = decl.javaGenericClause
     printer.printBraceBlock(
-      "\(modifiers.joined(separator: " ")) class \(decl.effectiveJavaSimpleName)\(genericClause)\(extendsClause)\(implementsClause)"
+      "\(modifiers.joined(separator: " ")) \(isJavaEnum ? "enum" : "class") \(decl.effectiveJavaSimpleName)\(genericClause)\(extendsClause)\(implementsClause)"
     ) { printer in
       body(&printer)
     }
+  }
+
+  /// Whether `decl` is printed as a Java `enum` (`payloadlessEnumsAsJavaEnums`): a non-generic,
+  /// non-error Swift enum whose cases have no associated values.
+  /// The Swift case name, as Swift and Kotlin code spell the case; a Java keyword gets a trailing `_`.
+  static func javaEnumConstantName(_ enumCase: ExtractedEnumCase) -> String {
+    let name = enumCase.name.trimmingCharacters(in: CharacterSet(charactersIn: "`"))
+    return JavaIdentifierFactory.javaKeywords.contains(name) ? name + "_" : name
+  }
+
+  func isJavaEnum(_ decl: ExtractedNominalType) -> Bool {
+    config.effectivePayloadlessEnumsAsJavaEnums && decl.swiftNominal.kind == .enum && !decl.swiftNominal.isGeneric
+      && !decl.cases.isEmpty && decl.cases.allSatisfy(\.parameters.isEmpty) && !self.isSwiftErrorType(decl)
+  }
+
+  /// A Java enum constant keeps one Swift value of its case for the life of the process, so passing it
+  /// to Swift needs no allocation. A Swift value returned to Java is mapped to its case's constant and
+  /// destroyed.
+  private func printJavaEnumSwiftValues(_ printer: inout JavaPrinter, _ decl: ExtractedNominalType) {
+    let javaName = decl.effectiveJavaSimpleName
+    let caseValues = decl.cases.compactMap { self.translatedDecl(for: $0.caseFunction)?.nativeFunctionName }
+    printer.print(
+      """
+      /** The Swift value of each case, created on first use and never destroyed. */
+      private static final class $SwiftValues {
+        static final long[] ADDRESSES = { \(caseValues.map { "\(javaName).\($0)()" }.joined(separator: ", ")) };
+      }
+
+      private static final SwiftInstanceCleanup $permanent = new SwiftInstanceCleanup() {
+        public boolean isDestroyed() { return false; }
+        public void run() {}
+      };
+
+      /**
+       * The constant for the case of the Swift value at {@code selfPointer}, which is destroyed: the
+       * constant keeps its own Swift value.
+       */
+      public static \(javaName) wrapMemoryAddressUnsafe(long selfPointer, SwiftArena swiftArena) {
+        return wrapMemoryAddressUnsafe(selfPointer);
+      }
+
+      public static \(javaName) wrapMemoryAddressUnsafe(long selfPointer) {
+        long typeMetadataAddress = \(javaName).$typeMetadataAddressDowncall();
+        \(javaName) value = values()[SwiftObjects.getRawDiscriminator(selfPointer, typeMetadataAddress)];
+        SwiftObjects.destroy(selfPointer, typeMetadataAddress);
+        return value;
+      }
+
+      public long $memoryAddress() {
+        return $SwiftValues.ADDRESSES[ordinal()];
+      }
+
+      @Override
+      public SwiftInstanceCleanup $cleanup() {
+        return $permanent;
+      }
+      """
+    )
   }
 
   private func printModuleClass(_ printer: inout JavaPrinter, body: (inout JavaPrinter) -> Void) {
@@ -832,8 +906,16 @@ extension JNISwift2JavaGenerator {
             }.joined(separator: .comma)
           }
         let translatedResult = getAsCaseFunction.translatedFunctionSignature.result
+        let associatedValues = JavaNativeConversionStep.placeToVar(
+          translatedResult.conversion,
+          name: "associatedValues$",
+          type: translatedResult.javaType
+        )
+        // With `optionalsAsNullable` the associated values are `null` when it's another case.
         getAsCaseFunction.translatedFunctionSignature.result.conversion = .method(
-          .placeToVar(translatedResult.conversion, name: "associatedValues$", type: translatedResult.javaType),
+          config.effectiveOptionalsAsNullable
+            ? .method(.constant("java.util.Optional"), function: "ofNullable", arguments: [associatedValues])
+            : associatedValues,
           function: "map",
           arguments: [
             .lambda(
@@ -898,18 +980,27 @@ extension JNISwift2JavaGenerator {
     // `LongUnaryOperator` but is translated to its own interface, which must then be printed.
     if translated.functionTypes.count == 1,
       let ty = translated.functionTypes.first,
-      KnownJavaFunctionalInterface.find(ty.swiftType) != nil
+      KnownJavaFunctionalInterface.find(ty.swiftType, closureMethodName: config.effectiveClosureMethodName) != nil
     {
+      return
+    }
+    // Overloads of a method share its helper class, and so do a closure property's getter and setter; the
+    // first one prints it.
+    let className = translated.closureHelperClassName
+    guard printedJavaClosureHelperClasses.insert("\(translated.parentName).\(className)").inserted else {
       return
     }
 
     printer.printBraceBlock(
       """
-      public static class \(translated.name)
+      public static class \(className)
       """
     ) { printer in
+      // Only holds interfaces. Without a public constructor, Kotlin's `Type.method()` can't also mean
+      // `Type.method` constructed, when the method takes no arguments.
+      printer.print("private \(className)() {}")
       for functionType in translated.functionTypes {
-        if KnownJavaFunctionalInterface.find(functionType.swiftType) != nil {
+        if KnownJavaFunctionalInterface.find(functionType.swiftType, closureMethodName: config.effectiveClosureMethodName) != nil {
           continue
         }
 
@@ -934,7 +1025,7 @@ extension JNISwift2JavaGenerator {
       """
       @FunctionalInterface
       public interface \(functionType.name) {
-        \(functionType.result.javaType) apply(\(apiParams.joined(separator: .comma)));
+        \(functionType.result.javaType) \(config.effectiveClosureMethodName)(\(apiParams.joined(separator: .comma)));
       }
       """
     )

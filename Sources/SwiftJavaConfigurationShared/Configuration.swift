@@ -181,11 +181,65 @@ public struct Configuration: Codable {
     enableJavaCallbacks ?? false
   }
 
+  /// Which declarations to export: `all` (default) exports every declaration that passes the access level
+  /// and filters, except those opted out with `@JavaExport(false)`. `annotated` exports only declarations marked
+  /// `@JavaExport`, including the members of a marked type or extension.
+  public var exportMode: JExtractExportMode?
+  public var effectiveExportMode: JExtractExportMode {
+    exportMode ?? .default
+  }
+
   /// If true, JExtract fails after generating when it skipped any declaration it could not
   /// extract or translate, and lists each one. Skipped declarations are always reported as warnings.
   public var failOnSkippedDeclarations: Bool?
   public var effectiveFailOnSkippedDeclarations: Bool {
     failOnSkippedDeclarations ?? false
+  }
+
+  /// If true, Swift enums whose cases have no associated values are generated as Java `enum`s,
+  /// with one constant per case named like the case, instead of classes wrapping a Swift value. Only supported in
+  /// `jni` mode.
+  public var payloadlessEnumsAsJavaEnums: Bool?
+  public var effectivePayloadlessEnumsAsJavaEnums: Bool {
+    payloadlessEnumsAsJavaEnums ?? false
+  }
+
+  /// If true, optional parameters and results of functions and properties use the wrapped Java type,
+  /// with `null` for `nil`, instead of `Optional`, `OptionalLong`, `OptionalInt` or `OptionalDouble`.
+  /// Only supported in `jni` mode.
+  public var optionalsAsNullable: Bool?
+  public var effectiveOptionalsAsNullable: Bool {
+    optionalsAsNullable ?? false
+  }
+
+  /// Fully qualified name of a Java annotation marking parameters and results that can be `null`, such as
+  /// `androidx.annotation.Nullable` or `org.jetbrains.annotations.Nullable`, so Kotlin sees nullable types
+  /// instead of platform types. Applied to optionals with `optionalsAsNullable`. It must be applicable to
+  /// methods and parameters: type-use only annotations, such as JSpecify's, aren't supported. Only supported
+  /// in `jni` mode.
+  public var nullableAnnotation: String?
+
+  /// Fully qualified name of a Java annotation marking parameters and results that are never `null`, such as
+  /// `androidx.annotation.NonNull` or `org.jetbrains.annotations.NotNull`, so Kotlin sees non-null types instead
+  /// of platform types. Applied to the other reference types. Same requirements as `nullableAnnotation`.
+  public var nonNullAnnotation: String?
+
+  /// The name of the single method of the functional interfaces jextract generates for Swift closures, `apply` by
+  /// default. With `invoke`, Kotlin calls a closure read from Swift as a function, `onTap()` instead of
+  /// `onTap.apply()`. With any name other than `apply`, closures such as `(Int64) -> Int64` also get their own
+  /// interface instead of a `java.util.function` one, so they can be called the same way. Only supported in `jni` mode.
+  public var closureMethodName: String?
+  public var effectiveClosureMethodName: String {
+    closureMethodName ?? "apply"
+  }
+
+  /// If true, Foundation values cross as standard Java types instead of Swift-backed wrapper classes generated
+  /// into each module: `URL` as `java.net.URI`, `Date` as `java.util.Date`, `Data` as `byte[]`, `Locale` as
+  /// `java.util.Locale` and `TimeZone` as `java.util.TimeZone`. Values are copied when they cross, and a `Date` keeps
+  /// millisecond precision. `UUID` is always a `java.util.UUID`. Only supported in `jni` mode.
+  public var foundationTypesAsJavaTypes: Bool?
+  public var effectiveFoundationTypesAsJavaTypes: Bool {
+    foundationTypesAsJavaTypes ?? false
   }
 
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
