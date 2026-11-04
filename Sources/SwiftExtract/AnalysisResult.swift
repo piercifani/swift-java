@@ -47,6 +47,25 @@ public struct AnalysisResult {
       type.initializers = type.initializers.flatMap { $0.expandingVariadicOverloads(maxOverloads: maxOverloads) }
     }
   }
+
+  /// Adds an overload for each trailing defaulted parameter a function can be called without, unless
+  /// a declared function already has that name and parameter types. Protocol requirements can't have
+  /// default arguments, so protocols are left as they are.
+  public mutating func expandDefaultArgumentOverloads() {
+    self.extractedGlobalFuncs = Self.withDefaultArgumentOverloads(self.extractedGlobalFuncs)
+
+    for type in self.extractedTypes.values where type.swiftNominal.kind != .protocol {
+      type.methods = Self.withDefaultArgumentOverloads(type.methods)
+      type.initializers = Self.withDefaultArgumentOverloads(type.initializers)
+    }
+  }
+
+  private static func withDefaultArgumentOverloads(_ funcs: [ExtractedFunc]) -> [ExtractedFunc] {
+    var declared = Set(funcs.map(\.overloadKey))
+    return funcs.flatMap { function in
+      [function] + function.defaultArgumentOverloads().filter { declared.insert($0.overloadKey).inserted }
+    }
+  }
 }
 
 // ==== -----------------------------------------------------------------------
