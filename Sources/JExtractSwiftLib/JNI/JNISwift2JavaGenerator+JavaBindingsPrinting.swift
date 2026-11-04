@@ -243,7 +243,7 @@ extension JNISwift2JavaGenerator {
     let boxName = decl.swiftNominal.javaExistentialBoxName
     let implementsClause = "JNISwiftInstance, \(decl.effectiveJavaSimpleName)"
 
-    printer.printBraceBlock("final class \(boxName) implements \(implementsClause)") { printer in
+    printer.printBraceBlock("public final class \(boxName) implements \(implementsClause)") { printer in
       printDesignatedConstructor(&printer, javaName: boxName, pointerParams: ["selfPointer", "selfTypePointer"])
       printer.println()
       printWrapMemoryAddressUnsafeFactory(
