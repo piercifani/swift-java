@@ -285,6 +285,29 @@ extension JNISwift2JavaGenerator {
     return (type.methods + type.variables).contains { isProtocolExtensionMember($0) && protocolMemberKey($0) == key }
   }
 
+  /// For a method of a concrete type that implements a requirement of a protocol the type conforms to,
+  /// the protocol that declares the requirement. The method's closure parameters must use that
+  /// protocol's functional interfaces for the Java method to override the interface's.
+  func closureInterfaceOwner(for decl: ExtractedFunc) -> ClosureInterfaceOwner? {
+    let hasClosureParameter = decl.functionSignature.parameters.contains { parameter in
+      if case .function = parameter.type { true } else { false }
+    }
+    guard hasClosureParameter,
+      let parent = decl.parentType?.asNominalTypeDeclaration, parent.kind != .protocol,
+      let type = self.analysis.extractedTypes[parent.qualifiedName]
+    else {
+      return nil
+    }
+    let key = protocolMemberKey(decl)
+    for proto in inheritedProtocols(of: type) {
+      let requirement = allProtocolRequirementMethods(of: proto).first { protocolMemberKey($0) == key }
+      if let owner = requirement?.parentType?.asNominalTypeDeclaration {
+        return ClosureInterfaceOwner(javaPackage: javaPackage, typeName: owner.qualifiedTypeName)
+      }
+    }
+    return nil
+  }
+
   /// Whether `member` is declared in a protocol extension rather than in the protocol itself.
   private func isProtocolExtensionMember(_ member: ExtractedFunc) -> Bool {
     var node: Syntax? = Syntax(fromProtocol: member.swiftDecl)

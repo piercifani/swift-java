@@ -44,7 +44,9 @@ extension JNISwift2JavaGenerator {
 
     var translated: TranslatedFunctionDecl?
     do {
-      translated = try self.javaTranslator.translate(decl)
+      var translator = self.javaTranslator
+      translator.closureInterfaceOwner = self.closureInterfaceOwner(for: decl)
+      translated = try translator.translate(decl)
     } catch {
       reportSkipped(decl.swiftDecl.qualifiedNameForDebug, reason: "\(error)")
       translated = nil
@@ -159,6 +161,9 @@ extension JNISwift2JavaGenerator {
     /// Module-qualified identities of extracted types that are surfaced to Java as `SwiftError` exceptions.
     let errorTypes: Set<SwiftNominalIdentity>
     var javaIdentifiers: JavaIdentifierFactory
+    /// For a method implementing a protocol requirement, the protocol: closure parameters use its
+    /// functional interfaces, so that the Java method overrides the interface's.
+    var closureInterfaceOwner: ClosureInterfaceOwner? = nil
 
     func translate(enumCase: ExtractedEnumCase) throws -> TranslatedEnumCase {
       let methodName = "" // TODO: Used for closures, replace with better name?
@@ -230,6 +235,7 @@ extension JNISwift2JavaGenerator {
         protocolWrappers: self.protocolWrappers,
         logger: self.logger,
         javaCallbackModules: self.javaCallbackModules,
+        closureInterfaceOwner: self.closureInterfaceOwner,
       )
 
       // Types with no parent will be outputted inside a "module" class.
@@ -1007,8 +1013,12 @@ extension JNISwift2JavaGenerator {
           known.javaType
         } else {
           JavaType.class(
-            package: javaPackage,
-            name: String.javaQualifiedName(parentName.fullName, methodName, parameterName)
+            package: closureInterfaceOwner?.javaPackage ?? javaPackage,
+            name: String.javaQualifiedName(
+              (closureInterfaceOwner?.typeName ?? parentName).fullName,
+              methodName,
+              parameterName
+            )
           )
         }
 
@@ -2825,4 +2835,11 @@ extension JavaType {
     }
     return element
   }
+}
+
+/// The type, and its Java package, that declares the functional interfaces of a method's closure
+/// parameters.
+struct ClosureInterfaceOwner {
+  var javaPackage: String
+  var typeName: SwiftQualifiedTypeName
 }

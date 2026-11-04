@@ -27,6 +27,17 @@ extension JNISwift2JavaGenerator {
     let protocolWrappers: [ExtractedNominalType: JavaInterfaceSwiftWrapper]
     let logger: Logger
     var javaCallbackModules: Set<String> = []
+    /// The type whose functional interfaces closure parameters use, when it isn't the parent (see
+    /// `JavaTranslation.closureInterfaceOwner`).
+    var closureInterfaceOwner: ClosureInterfaceOwner? = nil
+
+    /// The functional interface declared for a closure parameter: `Parent.method.parameter`.
+    func closureInterfaceType(parentName: SwiftQualifiedTypeName, methodName: String, parameterName: String) -> JavaType {
+      .class(
+        package: closureInterfaceOwner?.javaPackage ?? javaPackage,
+        name: String.javaQualifiedName((closureInterfaceOwner?.typeName ?? parentName).fullName, methodName, parameterName)
+      )
+    }
 
     /// Translates a Swift function into the native JNI method signature.
     func translate(
@@ -438,8 +449,8 @@ extension JNISwift2JavaGenerator {
         parameter: parameterName,
       )
       let javaBinaryName = String.javaBinaryName(
-        package: self.javaPackage,
-        parent: parentName,
+        package: closureInterfaceOwner?.javaPackage ?? self.javaPackage,
+        parent: closureInterfaceOwner?.typeName ?? parentName,
         method: methodName,
         qualifier: parameterName,
       )
@@ -458,10 +469,7 @@ extension JNISwift2JavaGenerator {
         parameters: [
           JavaParameter(
             name: parameterName,
-            type: .class(
-              package: javaPackage,
-              name: String.javaQualifiedName(parentName.fullName, methodName, parameterName)
-            )
+            type: closureInterfaceType(parentName: parentName, methodName: methodName, parameterName: parameterName)
           )
         ],
         conversion: .escapingClosureLowering(
@@ -498,10 +506,7 @@ extension JNISwift2JavaGenerator {
         if let known = knownInterface {
           known.javaType
         } else {
-          JavaType.class(
-            package: javaPackage,
-            name: String.javaQualifiedName(parentName.fullName, methodName, parameterName)
-          )
+          closureInterfaceType(parentName: parentName, methodName: methodName, parameterName: parameterName)
         }
 
       return NativeParameter(

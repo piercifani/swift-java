@@ -44,3 +44,16 @@ public final class TitledItem: Labeled {
     self.title = title
   }
 }
+
+/// A requirement with a closure parameter: conformers take the protocol's functional interface.
+public protocol EventSource {
+  func onEvent(_ handler: @escaping (Int64, Int64) -> Void)
+}
+
+public final class EventSourceImpl: EventSource {
+  public init() {}
+
+  public func onEvent(_ handler: @escaping (Int64, Int64) -> Void) {
+    handler(1, 2)
+  }
+}
