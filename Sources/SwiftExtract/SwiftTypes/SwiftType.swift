@@ -356,6 +356,41 @@ extension SwiftNominalType {
 }
 
 extension SwiftType {
+  /// This type with every bare protocol in value position spelled as an existential. In a parameter,
+  /// result or property type, `P` means `any P`; Swift 5 mode lets the `any` be omitted.
+  public var existentialForBareProtocols: SwiftType {
+    switch self {
+    case .nominal(let nominal) where nominal.isProtocol:
+      return .existential(self)
+    case .nominal(let nominal):
+      guard !nominal.genericArguments.isEmpty else { return self }
+      return .nominal(
+        SwiftNominalType(
+          parent: nominal.parent,
+          sugarName: nominal.sugarName,
+          nominalTypeDecl: nominal.nominalTypeDecl,
+          genericArguments: nominal.genericArguments.map(\.existentialForBareProtocols)
+        )
+      )
+    case .function(var fn):
+      fn.parameters = fn.parameters.map { p in
+        var p = p
+        p.type = p.type.existentialForBareProtocols
+        return p
+      }
+      fn.resultType = fn.resultType.existentialForBareProtocols
+      return .function(fn)
+    case .tuple(let elements):
+      return .tuple(elements.map { SwiftTupleElement(label: $0.label, type: $0.type.existentialForBareProtocols) })
+    case .inlineArray(let count, let element):
+      return .inlineArray(count: count, element: element.existentialForBareProtocols)
+    case .metatype, .existential, .opaque, .composite, .genericParameter:
+      return self
+    }
+  }
+}
+
+extension SwiftType {
   public static func thrownTypedError(
     from throwsClause: ThrowsClauseSyntax?,
     lookupContext: SwiftTypeLookupContext
