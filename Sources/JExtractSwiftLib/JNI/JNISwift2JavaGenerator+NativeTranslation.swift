@@ -126,13 +126,47 @@ extension JNISwift2JavaGenerator {
       genericParameters: [SwiftGenericParameterDeclaration],
       genericRequirements: [SwiftGenericRequirement]
     ) throws -> NativeParameter {
+      // A Swift error arrives as a Java `Throwable`.
+      if type.isSwiftError {
+        return NativeParameter(
+          parameters: [JavaParameter(name: parameterName, type: .javaLangThrowable)],
+          conversion: .swiftErrorFromJava(isOptional: false),
+          indirectConversion: nil,
+          conversionCheck: nil
+        )
+      }
+
       switch type {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.name
 
         if let knownType = nominalType.asKnownType {
           switch knownType {
+          case .optional(let wrapped) where wrapped.isSwiftError:
+            return NativeParameter(
+              parameters: [JavaParameter(name: parameterName, type: .javaLangThrowable)],
+              conversion: .swiftErrorFromJava(isOptional: true),
+              indirectConversion: nil,
+              conversionCheck: nil
+            )
+
           case .optional(let wrapped):
+            if let (functionType, _) = JavaTranslation.closureType(type) {
+              let closure = try translateFunctionParameter(
+                swiftType: .function(functionType),
+                functionType: functionType,
+                parameterName: parameterName,
+                methodName: methodName,
+                parentName: parentName
+              )
+              return NativeParameter(
+                parameters: closure.parameters,
+                conversion: .nilOrClosure(closure.conversion),
+                indirectConversion: nil,
+                conversionCheck: nil,
+                syntheticClosure: closure.syntheticClosure
+              )
+            }
             return try translateOptionalParameter(
               wrappedType: wrapped,
               parameterName: parameterName
@@ -375,8 +409,8 @@ extension JNISwift2JavaGenerator {
       methodName: String,
       parentName: SwiftQualifiedTypeName
     ) throws -> NativeParameter {
-      if !functionType.isEscaping {
-        // The legacy lowering handles primitive arguments and results only. Other closures go through
+      if !functionType.isEscaping && !functionType.isAsync {
+        // The legacy lowering handles synchronous primitive closures only. Other closures go through
         // the escaping one: its Swift closure can be passed where a non-escaping one is expected.
         if let legacy = try? translateNonEscapingFunctionParameter(
           functionType: functionType,
@@ -409,11 +443,15 @@ extension JNISwift2JavaGenerator {
         method: methodName,
         qualifier: parameterName,
       )
-      let generator = JavaInterfaceProtocolWrapperGenerator()
+      let generator = JavaInterfaceProtocolWrapperGenerator(
+        asyncFuncMode: config.effectiveAsyncFuncMode,
+        foundationTypesAsJavaTypes: config.effectiveFoundationTypesAsJavaTypes
+      )
       let syntheticFunction = try generator.generateSyntheticClosureFunction(
         functionType: functionType,
         javaInterfaceName: javaClosureInterfaceName,
         javaBinaryName: javaBinaryName,
+        methodName: config.effectiveClosureMethodName,
       )
 
       return NativeParameter(
@@ -443,7 +481,7 @@ extension JNISwift2JavaGenerator {
     ) throws -> NativeParameter {
       var parameters = [NativeParameter]()
       for (i, parameter) in functionType.parameters.enumerated() {
-        let closureParamName = parameter.parameterName ?? "_\(i)"
+        let closureParamName = (parameter.parameterName ?? "_\(i)").javaSafeIdentifier
         let closureParameter = try translateClosureParameter(
           parameter.type,
           parameterName: closureParamName
@@ -452,7 +490,10 @@ extension JNISwift2JavaGenerator {
       }
 
       let result = try translateClosureResult(functionType.resultType)
-      let knownInterface = KnownJavaFunctionalInterface.find(functionType)
+      let knownInterface = KnownJavaFunctionalInterface.find(
+        functionType,
+        closureMethodName: config.effectiveClosureMethodName
+      )
       let interfaceJavaType =
         if let known = knownInterface {
           known.javaType
@@ -475,7 +516,7 @@ extension JNISwift2JavaGenerator {
           result: result,
           // The method to call is decided with the interface, from the Swift type: the JNI
           // signature alone can't tell `(Int) -> Int`'s own interface from `LongUnaryOperator`.
-          methodName: knownInterface?.method ?? "apply"
+          methodName: knownInterface?.method ?? config.effectiveClosureMethodName
         ),
         indirectConversion: nil,
         conversionCheck: nil
@@ -850,11 +891,19 @@ extension JNISwift2JavaGenerator {
       methodName: String,
       resultName: String = "result"
     ) throws -> NativeResult {
+      // A Swift error is returned as a Java `Throwable`.
+      if swiftType.isSwiftError {
+        return NativeResult(javaType: .javaLangThrowable, conversion: .javaThrowable(isOptional: false), outParameters: [])
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
         if let knownType = nominalType.asKnownType {
           switch knownType {
+          case .optional(let wrapped) where wrapped.isSwiftError:
+            return NativeResult(javaType: .javaLangThrowable, conversion: .javaThrowable(isOptional: true), outParameters: [])
+
           case .optional(let wrapped):
             return try translateOptionalResult(wrappedType: wrapped, methodName: methodName, resultName: resultName)
 
@@ -1307,7 +1356,32 @@ extension JNISwift2JavaGenerator {
       )
     }
 
+    /// A returned closure, as the handle of a Swift closure Java calls with boxed arguments; 0 for `nil`.
+    func translateSwiftClosureResult(_ functionType: SwiftFunctionType, isOptional: Bool) throws -> NativeResult {
+      // A synchronous call from Java has no way to receive a thrown error; an async one completes
+      // its future with it.
+      if functionType.isThrowing && !functionType.isAsync {
+        throw JavaTranslationError.unsupportedSwiftType(.function(functionType))
+      }
+      let argumentBridges = try functionType.parameters.map { try bridgeTypeName(for: $0.type) }
+      let resultBridge = functionType.resultType.isVoid ? nil : try bridgeTypeName(for: functionType.resultType)
+      return NativeResult(
+        javaType: .long,
+        conversion: .swiftClosure(
+          argumentBridges: argumentBridges,
+          resultBridge: resultBridge,
+          isOptional: isOptional,
+          isMainActor: functionType.isMainActorIsolated,
+          effects: functionType.isAsync ? (functionType.isThrowing ? "try await " : "await ") : nil
+        ),
+        outParameters: []
+      )
+    }
+
     private func bridgeTypeName(for swiftType: SwiftType) throws -> String {
+      if swiftType.isSwiftError {
+        return "ErrorBridge"
+      }
       switch swiftType {
       case .nominal(let nominalType):
         if let knownType = nominalType.asKnownType {
@@ -1322,6 +1396,8 @@ extension JNISwift2JavaGenerator {
             return "SetBridge<\(try bridgeTypeName(for: element))>"
           case .bool, .int, .uint, .int8, .uint8, .int16, .uint16, .int32, .uint32, .int64, .uint64, .float, .double, .string:
             return "JavaBoxableBridge<\(swiftType)>"
+          case _ where config.effectiveFoundationTypesAsJavaTypes && swiftType.isFoundationJavaValue:
+            return "JavaObjectValueBridge<\(swiftType)>"
           default:
             throw JavaTranslationError.unsupportedSwiftType(swiftType)
           }
@@ -1466,6 +1542,27 @@ extension JNISwift2JavaGenerator {
     )
 
     indirect case initializeSwiftJavaWrapper(NativeSwiftConversionStep, wrapperName: String)
+
+    /// The Swift error for a Java `Throwable` argument; `nil` for `null` when optional.
+    case swiftErrorFromJava(isOptional: Bool)
+
+    /// The Java `Throwable` for a Swift error result; `null` for `nil` when optional.
+    case javaThrowable(isOptional: Bool)
+
+    /// `nil` for a null Java object, otherwise the inner conversion: an optional escaping closure.
+    indirect case nilOrClosure(NativeSwiftConversionStep)
+
+    /// The handle of a new Swift closure calling the closure value, which converts the boxed Java arguments
+    /// and result with these `JobjectBridge`s (no result bridge for `Void`).
+    /// A closure returned to Java. `effects` is the `await` or `try await` that calls an async closure,
+    /// `nil` for a synchronous one.
+    case swiftClosure(
+      argumentBridges: [String],
+      resultBridge: String?,
+      isOptional: Bool,
+      isMainActor: Bool,
+      effects: String?
+    )
 
     indirect case optionalLowering(NativeSwiftConversionStep, discriminatorName: String, valueName: String)
 
@@ -1813,7 +1910,7 @@ extension JNISwift2JavaGenerator {
 
         let fn = syntheticFunction.functionType
         let parameterNames = fn.parameters.enumerated().map { idx, param in
-          param.parameterName ?? "_\(idx)"
+          (param.parameterName ?? "_\(idx)").javaSafeIdentifier
         }
         let closureParameters = parameterNames.joined(separator: .comma)
         let isVoid = fn.resultType.isVoid
@@ -1836,11 +1933,36 @@ extension JNISwift2JavaGenerator {
         let argumentPrefix = argPrinter.finalize()
 
         // Build result conversion
-        // Note: The Java interface is synchronous even for async closures.
-        // The async nature is on the Swift side, inferred from the expected type.
         var resultPrinter = SwiftPrinter()
-        let upcallExpr = "\(callInterfaceVar).apply(\(upcallArguments.joined(separator: .comma)))"
-        let resultConverted = syntheticFunction.resultConversion.render(&resultPrinter, upcallExpr)
+        var resultConverted: String
+        if fn.isAsync {
+          // Java returns a `CompletableFuture`, awaited without blocking a thread; a Java failure traps
+          // unless the closure throws. wrap-java doesn't bind a generic `CompletableFuture<T>` result,
+          // so `apply` is called dynamically.
+          let tryKeyword = fn.isThrowing ? "try" : "try!"
+          let arguments = upcallArguments.isEmpty ? "" : "arguments: \(upcallArguments.joined(separator: .comma)), "
+          resultPrinter.print(
+            "let future$ = \(tryKeyword) \(callInterfaceVar).dynamicJavaMethodCall(methodName: \"\(syntheticFunction.methodName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
+          )
+          resultPrinter.print(
+            "guard let future$ else { fatalError(\"Upcall to \(syntheticFunction.methodName) unexpectedly returned a null future\") }"
+          )
+          if isVoid {
+            resultConverted = "_ = \(tryKeyword) await _awaitCompletableFuture(future$)"
+          } else {
+            resultPrinter.print("let result$ = \(tryKeyword) await _awaitCompletableFuture(future$)")
+            if fn.resultType.isDirectlyTranslatedToWrapJava {
+              // The task may have resumed on another thread: use its environment.
+              resultConverted =
+                "\(fn.resultType).fromJavaObject(result$?.javaThis, in: try! JavaVirtualMachine.shared().environment())"
+            } else {
+              resultConverted = syntheticFunction.resultConversion.render(&resultPrinter, "result$")
+            }
+          }
+        } else {
+          let upcallExpr = "\(callInterfaceVar).\(syntheticFunction.methodName)(\(upcallArguments.joined(separator: .comma)))"
+          resultConverted = syntheticFunction.resultConversion.render(&resultPrinter, upcallExpr)
+        }
         let resultPrefix = resultPrinter.finalize()
 
         // Note: async is part of the closure TYPE, not the closure literal syntax.
@@ -1881,6 +2003,57 @@ extension JNISwift2JavaGenerator {
       case .initializeSwiftJavaWrapper(let inner, let wrapperName):
         let inner = inner.render(&printer, placeholder)
         return "\(wrapperName)(javaThis: \(inner), environment: environment)"
+
+      case .swiftErrorFromJava(let isOptional):
+        return isOptional
+          ? "\(placeholder).map { environment.makeSwiftError(for: $0) }"
+          : "environment.makeSwiftError(for: \(placeholder)!)"
+
+      case .javaThrowable(let isOptional):
+        return isOptional
+          ? "(\(placeholder)).flatMap { environment.makeJavaThrowableLocalRef(for: $0) }"
+          : "environment.makeJavaThrowableLocalRef(for: \(placeholder))"
+
+      case .nilOrClosure(let inner):
+        return "\(placeholder) == nil ? nil : \(inner.render(&printer, placeholder))"
+
+      case .swiftClosure(let argumentBridges, let resultBridge, let isOptional, let isMainActor, let effects):
+        printer.print("let closure$ = \(placeholder)")
+        let arguments = argumentBridges.enumerated().map { index, bridge in
+          "\(bridge).fromJavaObject(_swiftClosureArgument(arguments$, \(index), in: environment), in: environment)"
+        }
+        let body: [String]
+        if let effects {
+          // Convert the arguments on the calling thread, then await the closure in a task whose
+          // future Java gets back. The closure and its arguments move into that task.
+          let argumentNames = arguments.indices.map { "argument\($0)$" }
+          let call = "\(effects)callee$(\(argumentNames.joined(separator: .comma)))"
+          let result =
+            if let resultBridge {
+              ["  return \(resultBridge).toJavaObject(\(call), in: environment)"]
+            } else {
+              ["  \(call)", "  return nil"]
+            }
+          body =
+            ["nonisolated(unsafe) let callee$ = closure$"]
+            + zip(argumentNames, arguments).map { "nonisolated(unsafe) let \($0) = \($1)" }
+            + ["return _swiftClosureFuture(in: environment) { environment in"] + result + ["}"]
+        } else {
+          let callee = isMainActor ? "callee$" : "closure$"
+          let call = "\(callee)(\(arguments.joined(separator: .comma)))"
+          let result =
+            if let resultBridge {
+              ["return \(resultBridge).toJavaObject(\(call), in: environment)"]
+            } else {
+              [call, "return nil"]
+            }
+          body = (isMainActor ? ["nonisolated(unsafe) let callee$ = closure$"] : []) + result
+        }
+        let maker = isMainActor && effects == nil ? "_makeMainActorSwiftClosure" : "_makeSwiftClosure"
+        let make =
+          (["\(maker) { arguments$, environment in"] + body.map { "  \($0)" } + ["}"])
+          .joined(separator: "\n")
+        return isOptional ? "closure$.map { closure$ in \(make) } ?? 0" : make
 
       case .optionalLowering(let valueConversion, let discriminatorName, let valueName):
         let value = valueConversion.render(&printer, valueName)
