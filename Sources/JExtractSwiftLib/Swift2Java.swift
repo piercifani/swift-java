@@ -38,7 +38,11 @@ public struct SwiftToJava {
     let javaPackage = try validateJavaPackage(config.javaPackage)
 
     let skippedDuringAnalysis = SkippedDeclarationCollector()
-    let translator = makeSwiftJavaAnalyzer(config: config, diagnosticsSink: skippedDuringAnalysis)
+    let translator = makeSwiftJavaAnalyzer(
+      config: config,
+      dependencyConfigs: dependencyConfigs,
+      diagnosticsSink: skippedDuringAnalysis
+    )
     let log = translator.log
 
     guard let inputSwift = config.inputSwiftDirectory else {
