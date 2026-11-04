@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 import JExtractSwiftLib
+import SwiftJavaConfigurationShared
 import Testing
 
 /// Escaping closures whose parameters are jextracted types, and closure types
@@ -283,6 +284,36 @@ struct JNIEscapingClosureJExtractedTypesTests {
       .swift,
       expectedChunks: [
         "public func apply(_ _0: JavaOptional<JavaString>?, _ _1: JavaOptionalLong?)"
+      ]
+    )
+  }
+
+  @Test
+  func closureTakingArrayOfURLs_passesThemAsIs() throws {
+    var config = Configuration()
+    config.foundationTypesAsJavaTypes = true
+    try assertOutput(
+      input: "import Foundation\npublic func onSave(_ cb: @escaping ([URL]) -> Void) {}",
+      config: config,
+      .jni,
+      .swift,
+      expectedChunks: [
+        "public func apply(_ _0: [URL])",
+        "javaInterface_cb$.apply(_0)",
+      ]
+    )
+  }
+
+  /// `toJavaOptional()` needs a Java object, which an array isn't: the function is skipped.
+  @Test
+  func closureTakingOptionalArray_isSkipped() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func onSelect(_ cb: @escaping ([Item]?) -> Void) {}",
+      .jni,
+      .swift,
+      expectedChunks: [],
+      notExpectedChunks: [
+        "Java_com_example_swift_SwiftModule__00024onSelect"
       ]
     )
   }

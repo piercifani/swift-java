@@ -296,6 +296,10 @@ extension JNISwift2JavaGenerator {
     }
 
     private func translateArrayParameter(name: String, elementType: SwiftType) throws -> UpcallConversionStep {
+      // An array of values that cross as they are (strings, numbers, Foundation values) is a `JavaValue` too.
+      if crossesAsIs(elementType) {
+        return .placeholder
+      }
       switch elementType {
       case .nominal(let nominalType):
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
@@ -323,6 +327,10 @@ extension JNISwift2JavaGenerator {
     }
 
     private func translateOptionalParameter(name: String, wrappedType: SwiftType) throws -> UpcallConversionStep {
+      // `toJavaOptional()` needs a Java object; an array isn't one.
+      if case .nominal(let nominal) = wrappedType, case .array = nominal.asKnownType {
+        throw JavaTranslationError.unsupportedSwiftType(wrappedType)
+      }
       let wrappedConversion = try translateParameter(parameterName: name, type: wrappedType)
       return .toJavaOptional(.map(.placeholder, body: wrappedConversion))
     }
