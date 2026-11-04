@@ -544,4 +544,21 @@ struct JNIAsyncTests {
       ]
     )
   }
+
+  @Test("Import: (MyClass?) async (Swift): the optional argument's pointer is captured as unsafe-sendable")
+  func asyncOptionalJextractedArgument_swift() throws {
+    try assertOutput(
+      input: """
+        public class MyClass { }
+        public func connect(user: MyClass?) async
+        """,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "nonisolated(unsafe) let userUnsafeSendable$ = user$",
+        "let user$ = userUnsafeSendable$",
+      ]
+    )
+  }
 }
