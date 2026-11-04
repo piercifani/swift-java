@@ -33,6 +33,23 @@ struct JNIJavaEnumTests {
     """
 
   @Test
+  func javaKeywordCaseIsEscaped() throws {
+    try assertOutput(
+      input: """
+        public enum Policy {
+          case `default`
+          case strict
+        }
+        """,
+      config: config,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["default_, strict;"]
+    )
+  }
+
+  @Test
   func casesBecomeConstants() throws {
     try assertOutput(
       input: source,
@@ -42,7 +59,8 @@ struct JNIJavaEnumTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         "public enum Phase implements JNISwiftInstance {",
-        "IDLE, LOADING;",
+        // Swift case names, as Swift and Kotlin code spell them.
+        "idle, loading;",
         "static final long[] ADDRESSES = { Phase.$idle(), Phase.$loading() };",
         """
         public static Phase wrapMemoryAddressUnsafe(long selfPointer) {
