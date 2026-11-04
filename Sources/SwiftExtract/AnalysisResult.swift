@@ -12,6 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+import SwiftSyntax
+
 /// The complete analysis result of the analyzed Swift inputs.
 /// This is used as the primary input to source generators, which then act on the analyzed decls.
 public struct AnalysisResult {
@@ -63,9 +65,66 @@ public struct AnalysisResult {
   private static func withDefaultArgumentOverloads(_ funcs: [ExtractedFunc]) -> [ExtractedFunc] {
     var declared = Set(funcs.map(\.overloadKey))
     return funcs.flatMap { function in
-      [function] + function.defaultArgumentOverloads().filter { declared.insert($0.overloadKey).inserted }
+      let others = sameNameDeclarations(as: function, extracted: funcs)
+      return [function]
+        + function.defaultArgumentOverloads().filter { overload in
+          // The thunk calls the original with only these arguments, which mustn't be ambiguous.
+          let labels = overload.functionSignature.parameters.map { $0.argumentLabel ?? "_" }
+          return declared.insert(overload.overloadKey).inserted
+            && !others.contains { callableLabelLists(of: $0).contains(labels) }
+        }
     }
   }
+
+  /// The other declarations a call to `function` could resolve to: those with its name, exported or not,
+  /// in the same declaration list, and the extracted ones elsewhere (such as in other extensions).
+  private static func sameNameDeclarations(as function: ExtractedFunc, extracted: [ExtractedFunc]) -> [DeclSyntax] {
+    var declarations = extracted.filter { $0 !== function }.map { DeclSyntax(fromProtocol: $0.swiftDecl) }
+    if let list = function.swiftDecl.parent?.parent?.as(MemberBlockItemListSyntax.self) {
+      declarations += list.map(\.decl)
+    } else if let list = function.swiftDecl.parent?.parent?.as(CodeBlockItemListSyntax.self) {
+      declarations += list.compactMap { $0.item.as(DeclSyntax.self) }
+    }
+    let isStatic = isStaticDeclaration(DeclSyntax(fromProtocol: function.swiftDecl))
+    var seen: Set<SyntaxIdentifier> = [function.swiftDecl.id]
+    return declarations.filter { declaration in
+      declarationName(declaration) == function.name && isStaticDeclaration(declaration) == isStatic
+        && seen.insert(declaration.id).inserted
+    }
+  }
+}
+
+private func declarationName(_ declaration: DeclSyntax) -> String? {
+  if let function = declaration.as(FunctionDeclSyntax.self) {
+    return function.name.text
+  }
+  return declaration.is(InitializerDeclSyntax.self) ? "init" : nil
+}
+
+private func isStaticDeclaration(_ declaration: DeclSyntax) -> Bool {
+  declaration.as(FunctionDeclSyntax.self)?.modifiers.contains {
+    $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class)
+  } ?? false
+}
+
+/// The argument label lists a call to a function or initializer can use: any parameter with a default
+/// value may be left out.
+private func callableLabelLists(of declaration: DeclSyntax) -> Set<[String]> {
+  let parameters: FunctionParameterListSyntax
+  if let function = declaration.as(FunctionDeclSyntax.self) {
+    parameters = function.signature.parameterClause.parameters
+  } else if let initializer = declaration.as(InitializerDeclSyntax.self) {
+    parameters = initializer.signature.parameterClause.parameters
+  } else {
+    return []
+  }
+  var lists: Set<[String]> = [[]]
+  for parameter in parameters {
+    let label = parameter.firstName.tokenKind == .wildcard ? "_" : parameter.firstName.text
+    let withParameter = Set(lists.map { $0 + [label] })
+    lists = parameter.defaultValue == nil ? withParameter : lists.union(withParameter)
+  }
+  return lists
 }
 
 // ==== -----------------------------------------------------------------------
