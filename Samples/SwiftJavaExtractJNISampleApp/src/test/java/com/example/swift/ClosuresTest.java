@@ -176,4 +176,14 @@ public class ClosuresTest {
         double result = MySwiftLibrary.globalCallMeLongToDoubleFunction((long a) -> { return (double) a; });
         assertEquals(1.0, result);
     }
+
+    @Test
+    void intClosure() {
+        assertEquals(10, MySwiftLibrary.applyIntClosure(x -> x * 2, 5));
+    }
+
+    @Test
+    void unannotatedStaticLet() {
+        assertEquals(42, ClosureConstants.getAnswer());
+    }
 }

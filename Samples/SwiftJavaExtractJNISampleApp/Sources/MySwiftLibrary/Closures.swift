@@ -117,3 +117,13 @@ public func closureMultipleArguments(
   closure(input1, input2)
 }
 // snippet.end
+
+/// Platform-width `Int` closures get their own functional interface.
+public func applyIntClosure(_ f: (Int) -> Int, to x: Int) -> Int {
+  f(x)
+}
+
+public enum ClosureConstants {
+  /// No type annotation: inferred as `Int` from the literal.
+  public static let answer = 42
+}

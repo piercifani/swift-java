@@ -198,6 +198,11 @@ extension JNISwift2JavaGenerator {
     }
 
     func translate(_ decl: ExtractedFunc) throws -> TranslatedFunctionDecl {
+      // Java has no `inout`; the thunk would pass a converted temporary, which doesn't compile.
+      if decl.functionSignature.parameters.contains(where: { $0.convention == .inout }) {
+        throw JavaTranslationError.inoutParametersNotSupported
+      }
+
       let nativeTranslation = NativeJavaTranslation(
         config: self.config,
         javaPackage: self.javaPackage,
@@ -2262,6 +2267,9 @@ extension JNISwift2JavaGenerator {
     /// The user has not supplied a mapping from `SwiftType` to
     /// a java class.
     case wrappedJavaClassTranslationNotProvided(SwiftType)
+
+    /// `inout` parameters have no Java equivalent yet.
+    case inoutParametersNotSupported
 
     // FIXME: Remove once we support protocol variables
     case protocolVariablesNotSupported

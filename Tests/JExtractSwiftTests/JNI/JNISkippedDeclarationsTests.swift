@@ -64,7 +64,11 @@ struct JNISkippedDeclarationsTests {
   @Test
   func analysisSkipsAreCollected() throws {
     let sink = SkippedDeclarationCollector()
-    _ = try generate("public struct S { public static let untyped = 42 }", sink: sink)
+    // `S.make()` can't be typed without the type checker, so it still needs an annotation.
+    _ = try generate(
+      "public struct S { public static func make() -> S { S() }; public static let untyped = S.make() }",
+      sink: sink
+    )
     #expect(sink.skipped.count == 1, "\(sink.skipped)")
     #expect(sink.skipped.first?.hasPrefix("S.untyped") == true)
   }
