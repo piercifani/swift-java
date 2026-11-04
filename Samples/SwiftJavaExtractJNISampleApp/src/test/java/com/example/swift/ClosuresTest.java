@@ -176,4 +176,16 @@ public class ClosuresTest {
         double result = MySwiftLibrary.globalCallMeLongToDoubleFunction((long a) -> { return (double) a; });
         assertEquals(1.0, result);
     }
+
+    @Test
+    void autoclosure() {
+        assertEquals(42, MySwiftLibrary.evaluate(() -> 42));
+    }
+
+    @Test
+    void escapingAutoclosure() {
+        int[] calls = new int[1];
+        assertEquals(42, MySwiftLibrary.evaluateTwice(() -> { calls[0]++; return 21; }));
+        assertEquals(2, calls[0]);
+    }
 }

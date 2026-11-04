@@ -383,12 +383,13 @@ extension SwiftType {
       // FIXME: This string matching is a horrible hack.
       let attrs = attributedType.attributes.trimmedDescription
 
-      // Handle @escaping attribute
-      if attrs.contains("@escaping") {
+      // Handle @escaping and @autoclosure attributes
+      if attrs.contains("@escaping") || attrs.contains("@autoclosure") {
         let innerType = try SwiftType(attributedType.baseType, lookupContext: lookupContext)
         switch innerType {
         case .function(var functionType):
-          functionType.isEscaping = true
+          functionType.isEscaping = attrs.contains("@escaping")
+          functionType.isAutoclosure = attrs.contains("@autoclosure")
           self = .function(functionType)
         default:
           throw TypeTranslationError.unimplementedType(type)

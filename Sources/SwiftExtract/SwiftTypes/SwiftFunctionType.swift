@@ -24,6 +24,8 @@ public struct SwiftFunctionType: Equatable {
   public var parameters: [SwiftParameter]
   public var resultType: SwiftType
   public var isEscaping: Bool = false
+  /// `@autoclosure`: a call passes an expression of the result type, not a closure.
+  public var isAutoclosure: Bool = false
 
   public var effectSpecifiers: [SwiftEffectSpecifier] = []
 
