@@ -53,6 +53,9 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
   var translatedDecls: [ExtractedFunc: TranslatedFunctionDecl] = [:]
   var translatedEnumCases: [ExtractedEnumCase: TranslatedEnumCase] = [:]
 
+  /// How many native methods each `Parent.$name(types)` signature has, to keep overloads apart.
+  var nativeFunctionNames: [String: Int] = [:]
+
   /// Module-qualified identities of extracted types that are surfaced to Java as `SwiftError` exceptions.
   lazy var swiftErrorTypes: Set<SwiftNominalIdentity> = Set(
     analysis.extractedTypes.values
