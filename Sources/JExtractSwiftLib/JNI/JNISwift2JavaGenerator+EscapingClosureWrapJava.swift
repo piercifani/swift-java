@@ -47,12 +47,17 @@ extension JNISwift2JavaGenerator {
 
   /// A nominal type this module jextracts, which crosses into Java as its generated Java class.
   private func jextractedNominal(_ type: SwiftType) -> SwiftNominalTypeDeclaration? {
+    // Types of this module, or of a jextracted module it depends on (its Java package is known).
     guard case .nominal(let nominal) = type, nominal.asKnownType == nil,
-      nominal.nominalTypeDecl.moduleName == swiftModuleName
+      javaPackage(of: nominal.nominalTypeDecl) != nil
     else {
       return nil
     }
     return nominal.nominalTypeDecl
+  }
+
+  private func javaPackage(of decl: SwiftNominalTypeDeclaration) -> String? {
+    decl.moduleName == swiftModuleName ? javaPackage : moduleJavaPackages[decl.moduleName]
   }
 
   private func optionalWrapped(_ type: SwiftType) -> SwiftType? {
@@ -95,7 +100,7 @@ extension JNISwift2JavaGenerator {
       names.insert(c.name, at: 0)
       current = c.parent
     }
-    let binaryName = "\(javaPackage).\(names.joined(separator: "$"))"
+    let binaryName = "\(javaPackage(of: decl)!).\(names.joined(separator: "$"))"
     let className = "Java\(decl.name)"
 
     var classDecl =

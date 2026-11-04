@@ -208,4 +208,24 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  @Test
+  func closureReturningTypeFromDependencyModule_swiftThunks() throws {
+    try assertOutput(
+      input: """
+        import DependencyLib
+
+        public func configure(scheme: @escaping () -> DependencyScheme) {}
+        """,
+      .jni,
+      .swift,
+      swiftModuleName: "PrimaryLib",
+      dependencySwiftSources: ["DependencyLib": "public struct DependencyScheme {}"],
+      moduleJavaPackages: ["DependencyLib": "com.example.dep"],
+      expectedChunks: [
+        "public func apply() -> JavaDependencyScheme!",
+        #"@JavaClass("com.example.dep.DependencyScheme")"#,
+      ]
+    )
+  }
 }
