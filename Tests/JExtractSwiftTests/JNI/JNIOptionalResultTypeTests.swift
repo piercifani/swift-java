@@ -16,9 +16,9 @@ import JExtractSwiftLib
 import SwiftJavaConfigurationShared
 import Testing
 
-/// An optional array of primitives wraps the primitive array the native method returns.
+/// An optional result wraps the Java value the native method returns.
 @Suite
-struct JNIOptionalPrimitiveArrayTests {
+struct JNIOptionalResultTypeTests {
   @Test
   func optionalArrayOfPrimitives_javaBindings() throws {
     try assertOutput(
@@ -35,6 +35,23 @@ struct JNIOptionalPrimitiveArrayTests {
       ],
       notExpectedChunks: [
         "java.lang.Long[]"
+      ]
+    )
+  }
+
+  @Test
+  func optionalLabeledTuple_javaBindings() throws {
+    try assertOutput(
+      input: """
+        public struct Game {
+          public var teamScores: (primary: Int64?, secondary: Int64?)? { nil }
+        }
+        """,
+      .jni,
+      .java,
+      expectedChunks: [
+        "public java.util.Optional<LabeledTuple_getTeamScores_primary_secondary<OptionalLong, OptionalLong>> getTeamScores() {",
+        "public static final class LabeledTuple_getTeamScores_primary_secondary<T0, T1>",
       ]
     )
   }

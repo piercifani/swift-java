@@ -56,6 +56,14 @@ public class TupleTest {
     }
 
     @Test
+    void optionalLabeledTuple() {
+        var result = MySwiftLibrary.maybeLabeledTuple(true).orElseThrow();
+        assertEquals(10, result.x());
+        assertEquals(20, result.y());
+        assertTrue(MySwiftLibrary.maybeLabeledTuple(false).isEmpty());
+    }
+
+    @Test
     void labeledTuple() {
         var result = MySwiftLibrary.labeledTuple();
         // Access via named accessors
