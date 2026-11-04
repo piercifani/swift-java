@@ -895,6 +895,11 @@ in both modes.
 `@escaping` closures with `Void` return or primitive arguments/results are supported.
 The closure is stored on the Swift side and can be triggered multiple times.
 
+In JNI mode, escaping closure parameters may also be jextracted types (structs, classes,
+enums) or optionals of them. Java receives the generated Java class, or a
+`java.util.Optional` of it. A closure stored in a property is escaping, so its setter
+takes a Java functional interface as well.
+
 @TabNavigator {
    @Tab("Swift") {
       @Snippet(path: "Snippets/EscapingClosuresSwift.swift", slice: "escapingClosureDefinition")
@@ -931,5 +936,6 @@ Swift types conforming to `Sendable` are surfaced on the Java side with the
 callers that the wrapped Swift value is safe to share across threads. This
 translation is applied by both JNI and FFM modes.
 
-> Note: `@Sendable` as a closure-parameter attribute is not yet supported; the
-> environment captured inside the closure would need special handling.
+In JNI mode, closure types may carry `@Sendable` and `@MainActor`. A `@Sendable`
+closure can be invoked on any thread, so each call into Java uses the `JNIEnv` of the
+calling thread (attaching it if needed) rather than the one it was created with.

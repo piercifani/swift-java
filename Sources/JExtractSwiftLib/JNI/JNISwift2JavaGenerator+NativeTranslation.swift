@@ -369,7 +369,6 @@ extension JNISwift2JavaGenerator {
       methodName: String,
       parentName: SwiftQualifiedTypeName
     ) throws -> NativeParameter {
-      // @Sendable is not supported yet as "environment" is later captured inside the closure.
       if functionType.isEscaping {
         // For escaping closures we e need to create a Swift wrapper around
         // the passed down Java functional interface because we must keep it
@@ -1733,20 +1732,26 @@ extension JNISwift2JavaGenerator {
 
         let javaInterfaceVar = "javaInterface_\(placeholder)$"
 
-        // Build upcall arguments using UpcallConversionStep conversions
+        // A @Sendable closure may run on any thread, but the wrapper holds the JNIEnv of the
+        // thread that created it. Re-wrap the Java object with the current thread's JNIEnv per call.
+        let callInterfaceVar = fn.isSendable ? "javaInterface_\(placeholder)$call" : javaInterfaceVar
+
+        // Build upcall arguments using UpcallConversionStep conversions. Conversions may print
+        // statements (e.g. wrapping a Swift value in its Java class), which go in the closure body.
+        var argPrinter = SwiftPrinter()
         var upcallArguments: [String] = []
         for (idx, conversion) in syntheticFunction.parameterConversions.enumerated() {
-          var argPrinter = SwiftPrinter()
           let paramName = parameterNames[idx]
           let converted = conversion.render(&argPrinter, paramName)
           upcallArguments.append(converted)
         }
+        let argumentPrefix = argPrinter.finalize()
 
         // Build result conversion
         // Note: The Java interface is synchronous even for async closures.
         // The async nature is on the Swift side, inferred from the expected type.
         var resultPrinter = SwiftPrinter()
-        let upcallExpr = "\(javaInterfaceVar).apply(\(upcallArguments.joined(separator: .comma)))"
+        let upcallExpr = "\(callInterfaceVar).apply(\(upcallArguments.joined(separator: .comma)))"
         let resultConverted = syntheticFunction.resultConversion.render(&resultPrinter, upcallExpr)
         let resultPrefix = resultPrinter.finalize()
 
@@ -1756,6 +1761,11 @@ extension JNISwift2JavaGenerator {
           fn.parameters.isEmpty
           ? "{"
           : "{ \(closureParameters) in"
+
+        let sendableRebind =
+          fn.isSendable
+          ? "let \(callInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(javaInterfaceVar).javaThis, environment: try! JavaVirtualMachine.shared().environment())\n"
+          : ""
 
         // Construct the generated `@JavaInterface` wrap-java struct.
         // It will cause a new global ref on the javaThis, so no need for explicit global refs.
@@ -1767,9 +1777,9 @@ extension JNISwift2JavaGenerator {
             guard let \(placeholder) else {
               fatalError(\"\(placeholder) is null\")
             }
-            let \(javaInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(placeholder), environment: environment)
+            \(fn.isSendable ? "nonisolated(unsafe) " : "")let \(javaInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(placeholder), environment: environment)
             return \(closureHeader)
-              \(resultPrefix)\(isVoid ? resultConverted : "return \(resultConverted)")
+              \(sendableRebind)\(argumentPrefix)\(resultPrefix)\(isVoid ? resultConverted : "return \(resultConverted)")
             }
           }()
           """

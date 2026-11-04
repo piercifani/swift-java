@@ -76,3 +76,17 @@ public func multipleEscapingClosures(
     onFailure(-1)
   }
 }
+
+public func deliverStruct(
+  len: Int64,
+  callback: @escaping @Sendable (MySwiftStruct) -> Void
+) {
+  callback(MySwiftStruct(cap: len, len: len))
+}
+
+public func deliverOptionalStruct(
+  len: Int64?,
+  callback: @escaping (MySwiftStruct?) -> Int64
+) -> Int64 {
+  callback(len.map { MySwiftStruct(cap: $0, len: $0) })
+}

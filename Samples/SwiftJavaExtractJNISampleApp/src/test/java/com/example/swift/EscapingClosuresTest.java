@@ -166,4 +166,17 @@ public class EscapingClosuresTest {
             assertTrue(called2.get(), "Second callback should be called");
         }
     }
+
+    @Test
+    void testEscapingClosureWithStructParameter() {
+        AtomicLong received = new AtomicLong(-1);
+        MySwiftLibrary.deliverStruct(7, value -> received.set(value.getLen()));
+        assertEquals(7, received.get());
+    }
+
+    @Test
+    void testEscapingClosureWithOptionalStructParameter() {
+        assertEquals(5, MySwiftLibrary.deliverOptionalStruct(java.util.OptionalLong.of(5), value -> value.map(MySwiftStruct::getLen).orElse(-1L)));
+        assertEquals(-1, MySwiftLibrary.deliverOptionalStruct(java.util.OptionalLong.empty(), value -> value.map(MySwiftStruct::getLen).orElse(-1L)));
+    }
 }
