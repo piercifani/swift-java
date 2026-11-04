@@ -269,7 +269,8 @@ struct JNIEscapingClosureJExtractedTypesTests {
       .jni,
       .swift,
       expectedChunks: [
-        #"@JavaClass("com.example.swift.Item")"#
+        #"@JavaClass("com.example.swift.Item")"#,
+        "public func apply(_ _0: [JavaItem?])",
       ]
     )
   }
