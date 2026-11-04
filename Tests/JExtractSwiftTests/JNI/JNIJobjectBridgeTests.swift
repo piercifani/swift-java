@@ -48,14 +48,14 @@ struct JNIJobjectBridgeTests {
           }
         """,
         """
-        struct _JNIBridge_ReefFish: JextractedTypeBridge {
-          typealias SwiftType = ReefFish
+        public struct _JNIBridge_ReefFish: JextractedTypeBridge {
+          public typealias SwiftType = ReefFish
 
-          static var javaClass: jclass {
+          public static var javaClass: jclass {
             _JNI_ReefFish.javaClass
           } 
 
-          static var wrapMemoryAddressUnsafe: jmethodID {
+          public static var wrapMemoryAddressUnsafe: jmethodID {
             _JNI_ReefFish.wrapMemoryAddressUnsafe
           }
         }
@@ -82,12 +82,12 @@ struct JNIJobjectBridgeTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        struct _JNIBridge_MyID<T: Hashable, U>: JextractedGenericTypeBridge {
-          typealias SwiftType = MyID<T, U>
+        public struct _JNIBridge_MyID<T: Hashable, U>: JextractedGenericTypeBridge {
+          public typealias SwiftType = MyID<T, U>
         """,
         """
-        struct _JNIBridge_MyValue<T, O, E>: JextractedGenericTypeBridge where O : Swift.Comparable, E : Swift.Error {
-          typealias SwiftType = MyValue<T, O, E>
+        public struct _JNIBridge_MyValue<T, O, E>: JextractedGenericTypeBridge where O : Swift.Comparable, E : Swift.Error {
+          public typealias SwiftType = MyValue<T, O, E>
         """,
         """
         return SwiftModule.f().dictionaryGetJNIValue(in: environment, keyBridge: _JNIBridge_MyID<Int, Bool>.self, valueBridge: _JNIBridge_MyValue<Int, Bool, Never>.self)
@@ -108,8 +108,8 @@ struct JNIJobjectBridgeTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        struct _JNIBridge_VariadicBox<each T>: JextractedGenericTypeBridge {
-          typealias SwiftType = VariadicBox<repeat each T>
+        public struct _JNIBridge_VariadicBox<each T>: JextractedGenericTypeBridge {
+          public typealias SwiftType = VariadicBox<repeat each T>
         """,
         """
         return SwiftModule.f().dictionaryGetJNIValue(in: environment, keyBridge: JavaBoxableBridge<Int>.self, valueBridge: _JNIBridge_VariadicBox<Int, String>.self)

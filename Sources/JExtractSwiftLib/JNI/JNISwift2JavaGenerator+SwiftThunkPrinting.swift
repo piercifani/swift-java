@@ -985,21 +985,22 @@ extension JNISwift2JavaGenerator {
       }
     let parentProtocol = isEffectivelyGeneric ? "JextractedGenericTypeBridge" : "JextractedTypeBridge"
 
+    // Public: another module's thunks use it when they pass this type in a collection.
     let bridgeDeclaration =
       if let bridgeWhereClause {
-        "struct \(bridgeName)\(bridgeGenericClause): \(parentProtocol) \(bridgeWhereClause)"
+        "public struct \(bridgeName)\(bridgeGenericClause): \(parentProtocol) \(bridgeWhereClause)"
       } else {
-        "struct \(bridgeName)\(bridgeGenericClause): \(parentProtocol)"
+        "public struct \(bridgeName)\(bridgeGenericClause): \(parentProtocol)"
       }
 
     printer.printBraceBlock(bridgeDeclaration) { printer in
-      printer.print("typealias SwiftType = \(bridgedSwiftType)")
+      printer.print("public typealias SwiftType = \(bridgedSwiftType)")
       printer.println()
-      printer.printBraceBlock("static var javaClass: jclass") { printer in
+      printer.printBraceBlock("public static var javaClass: jclass") { printer in
         printer.print("\(cacheName).javaClass")
       }
       printer.println()
-      printer.printBraceBlock("static var wrapMemoryAddressUnsafe: jmethodID") { printer in
+      printer.printBraceBlock("public static var wrapMemoryAddressUnsafe: jmethodID") { printer in
         printer.print("\(cacheName).wrapMemoryAddressUnsafe")
       }
     }
