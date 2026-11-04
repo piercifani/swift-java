@@ -158,6 +158,23 @@ public class ArraysTest {
     }
 
     @Test
+    void nestedObjectArray() {
+        try (var arena = SwiftArena.ofConfined()) {
+            MySwiftClass first = MySwiftClass.init(1, 2, arena);
+            MySwiftClass[][] input = new MySwiftClass[][] {
+                { first, MySwiftClass.init(3, 4, arena) },
+                { MySwiftClass.init(5, 6, arena) }
+            };
+            MySwiftClass[][] result = MySwiftLibrary.nestedObjectArray(input, arena);
+            assertEquals(2, result.length);
+            assertEquals(2, result[0].length);
+            assertEquals(1, result[1].length);
+            assertEquals(1, result[0][0].getX());
+            assertEquals(6, result[1][0].getY());
+        }
+    }
+
+    @Test
     void nestedStringArray() {
         String[][] input = new String[][] {
             { "hello", "world" },

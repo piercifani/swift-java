@@ -90,3 +90,7 @@ public func dictionaryArray() -> [[String: Int64]] {
 public func setArray() -> [Set<String>] {
   [["a", "b"], ["c"]]
 }
+
+public func nestedObjectArray(array: [[MySwiftClass]]) -> [[MySwiftClass]] {
+  array
+}

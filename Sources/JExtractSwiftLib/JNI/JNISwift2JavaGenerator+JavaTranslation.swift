@@ -1842,9 +1842,25 @@ extension JNISwift2JavaGenerator {
           genericRequirements: genericRequirements
         )
         let innerJavaType = innerParam.parameter.type.javaType
+        let nonNull = JavaNativeConversionStep.requireNonNull(.placeholder, message: "\(parameterName) must not be null")
+        if case .requireNonNull(.placeholder, _) = innerParam.conversion {
+          return TranslatedParameter(
+            parameter: JavaParameter(name: parameterName, type: .array(innerJavaType), annotations: parameterAnnotations),
+            conversion: nonNull
+          )
+        }
+        // Rows of jextracted values: convert each row to its pointers, like a one-dimensional array.
         return TranslatedParameter(
           parameter: JavaParameter(name: parameterName, type: .array(innerJavaType), annotations: parameterAnnotations),
-          conversion: .requireNonNull(.placeholder, message: "\(parameterName) must not be null")
+          conversion: .method(
+            .method(
+              .arraysStream(nonNull),
+              function: "map",
+              arguments: [.lambda(args: ["row"], body: .replacingPlaceholder(innerParam.conversion, placeholder: "row"))]
+            ),
+            function: "toArray",
+            arguments: [.constant("\(innerJavaType.replacingArrayElement(with: .long))[]::new")]
+          )
         )
 
       case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
@@ -1924,12 +1940,30 @@ extension JNISwift2JavaGenerator {
           genericParameters: genericParameters,
           genericRequirements: genericRequirements
         )
+        if case .placeholder = innerResult.conversion {
+          return TranslatedResult(
+            javaType: .array(innerResult.javaType),
+            nativeJavaType: .array(innerResult.javaType),
+            annotations: annotations,
+            outParameters: [],
+            conversion: .placeholder
+          )
+        }
+        // Rows of jextracted values: wrap each row's pointers, like a one-dimensional array.
         return TranslatedResult(
           javaType: .array(innerResult.javaType),
-          nativeJavaType: .array(innerResult.javaType),
+          nativeJavaType: .array(innerResult.nativeJavaType),
           annotations: annotations,
           outParameters: [],
-          conversion: .placeholder
+          conversion: .method(
+            .method(
+              .arraysStream(.placeholder),
+              function: "map",
+              arguments: [.lambda(args: ["row"], body: .replacingPlaceholder(innerResult.conversion, placeholder: "row"))]
+            ),
+            function: "toArray",
+            arguments: [.constant("\(innerResult.javaType)[]::new")]
+          )
         )
 
       case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
@@ -2779,5 +2813,15 @@ extension JNISwift2JavaGenerator.TranslatedFunctionDecl {
       parameters += selfTypeParameter
     }
     return parameters + nativeSignature.result.outParameters
+  }
+}
+
+extension JavaType {
+  /// This array type with its innermost element replaced: `Item[][]` with `long` is `long[][]`.
+  fileprivate func replacingArrayElement(with element: JavaType) -> JavaType {
+    if case .array(let inner) = self {
+      return .array(inner.replacingArrayElement(with: element))
+    }
+    return element
   }
 }
