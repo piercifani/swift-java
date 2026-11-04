@@ -274,4 +274,16 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  @Test
+  func closureTakingOptionalString_usesJavaOptional() throws {
+    try assertOutput(
+      input: "public func onVerify(_ cb: @escaping (String?, Int64?) -> Void) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        "public func apply(_ _0: JavaOptional<JavaString>?, _ _1: JavaOptionalLong?)"
+      ]
+    )
+  }
 }

@@ -99,6 +99,16 @@ extension JNISwift2JavaGenerator {
     if !isResult, let nominal = optionalWrapped(type).flatMap(jextractedNominal) {
       return "JavaOptional<\(nominal.generatedJavaClassMacroName)>?"
     }
+    // Optional strings and numbers cross as what `Optional.toJavaOptional()` makes of them.
+    if !isResult, let wrapped = optionalWrapped(type), case .nominal(let nominal) = wrapped {
+      switch nominal.nominalTypeDecl.knownTypeKind {
+      case .string: return "JavaOptional<JavaString>?"
+      case .double: return "JavaOptionalDouble?"
+      case .int32: return "JavaOptionalInt?"
+      case .int64: return "JavaOptionalLong?"
+      default: break
+      }
+    }
     // Arrays of jextracted values cross as arrays of their Java objects.
     if !isResult, case .nominal(let array) = type, case .array(let element) = array.asKnownType,
       let nominal = jextractedNominal(element)
