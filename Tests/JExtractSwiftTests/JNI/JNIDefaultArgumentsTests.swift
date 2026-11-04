@@ -153,4 +153,30 @@ struct JNIDefaultArgumentsTests {
     #expect(swiftPrinter.contents.components(separatedBy: "public struct JavaSwiftModule_run_onDone").count == 2)
     #expect(javaPrinter.contents.components(separatedBy: "public static class run").count == 2)
   }
+
+  /// `Quantity.init()` would be ambiguous: the internal `init(value:)` can be called that way too.
+  @Test
+  func overloadAmbiguousWithAnotherDeclarationIsSkipped() throws {
+    try assertOutput(
+      input: """
+        public struct Quantity {
+          init(value: Int64 = 0) {}
+          public init(double: Double = 0) {}
+        }
+
+        public struct Count {
+          public init(count: Int64 = 1) {}
+        }
+        """,
+      .jni,
+      .swift,
+      expectedChunks: [
+        "Quantity.init(double: Double(fromJNI: double, in: environment))",
+        "Count.init()",
+      ],
+      notExpectedChunks: [
+        "Quantity.init()"
+      ]
+    )
+  }
 }
