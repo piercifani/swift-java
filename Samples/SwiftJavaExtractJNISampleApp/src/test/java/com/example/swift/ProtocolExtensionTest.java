@@ -37,4 +37,14 @@ public class ProtocolExtensionTest {
             assertEquals("b::uid", item.uid());
         }
     }
+
+    @Test
+    void conformerTakesProtocolClosureInterface() {
+        try (var arena = SwiftArena.ofConfined()) {
+            EventSource source = EventSourceImpl.init(arena);
+            long[] sum = new long[1];
+            source.onEvent((a, b) -> sum[0] = a + b);
+            assertEquals(3, sum[0]);
+        }
+    }
 }
