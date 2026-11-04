@@ -55,6 +55,11 @@ extension JNISwift2JavaGenerator {
       translated = nil
     }
 
+    if var candidate = translated {
+      candidate.nativeFunctionName = uniqueNativeFunctionName(candidate)
+      translated = candidate
+    }
+
     // `updateValue` so a failure (nil) is cached too; subscript-assigning nil would remove the key.
     translatedDecls.updateValue(translated, forKey: decl)
     return translated
@@ -65,6 +70,17 @@ extension JNISwift2JavaGenerator {
   private func reportSkipped(_ name: String, reason: String) {
     self.logger.warning("Failed to translate: '\(name)' in module '\(swiftModuleName)'; \(reason)")
     skippedDeclarations.append("\(name): \(reason)")
+  }
+
+  /// Overloads with different Java parameter types can still lower to the same native signature, since
+  /// every jextracted type is passed as a `long`: `init(standard: StandardMarket)` and
+  /// `init(sports: SportsMarket)` both need `$init(long)`. Later ones get a `$1`, `$2`… suffix.
+  private func uniqueNativeFunctionName(_ translated: TranslatedFunctionDecl) -> String {
+    let parameterTypes = translated.nativeParameters.map { "\($0.type)" }.joined(separator: ",")
+    let key = "\(translated.parentName).\(translated.nativeFunctionName)(\(parameterTypes))"
+    let count = nativeFunctionNames[key, default: 0]
+    nativeFunctionNames[key] = count + 1
+    return count == 0 ? translated.nativeFunctionName : "\(translated.nativeFunctionName)$\(count)"
   }
 
   /// Zero-argument `Throwable` members that a generated `SwiftError` subclass cannot redeclare with another meaning.
@@ -2744,5 +2760,20 @@ extension JNISwift2JavaGenerator {
     ) -> JavaTranslationError {
       .emptyTuple(file: _file, line: _line)
     }
+  }
+}
+
+extension JNISwift2JavaGenerator.TranslatedFunctionDecl {
+  /// The parameters of the `native` Java method, in declaration order.
+  var nativeParameters: [JavaParameter] {
+    let nativeSignature = self.nativeFunctionSignature
+    var parameters = nativeSignature.parameters.flatMap(\.parameters)
+    if let selfParameter = nativeSignature.selfParameter?.parameters {
+      parameters += selfParameter
+    }
+    if let selfTypeParameter = nativeSignature.selfTypeParameter?.parameters {
+      parameters += selfTypeParameter
+    }
+    return parameters + nativeSignature.result.outParameters
   }
 }

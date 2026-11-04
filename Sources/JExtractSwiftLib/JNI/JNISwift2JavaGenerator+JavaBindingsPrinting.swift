@@ -1154,18 +1154,8 @@ extension JNISwift2JavaGenerator {
   }
 
   private func printNativeFunction(_ printer: inout JavaPrinter, _ translatedDecl: TranslatedFunctionDecl) {
-    let nativeSignature = translatedDecl.nativeFunctionSignature
-    let resultType = nativeSignature.result.javaType
-    var parameters = nativeSignature.parameters.flatMap(\.parameters)
-    if let selfParameter = nativeSignature.selfParameter?.parameters {
-      parameters += selfParameter
-    }
-    if let selfTypeParameter = nativeSignature.selfTypeParameter?.parameters {
-      parameters += selfTypeParameter
-    }
-    parameters += nativeSignature.result.outParameters
-
-    let renderedParameters = parameters.map { javaParameter in
+    let resultType = translatedDecl.nativeFunctionSignature.result.javaType
+    let renderedParameters = translatedDecl.nativeParameters.map { javaParameter in
       "\(javaParameter.type) \(javaParameter.name)"
     }.joined(separator: .comma)
 

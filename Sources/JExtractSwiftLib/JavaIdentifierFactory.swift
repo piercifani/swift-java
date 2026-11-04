@@ -73,6 +73,9 @@ package struct JavaIdentifierFactory {
         Self.javaOperatorName(decl.name)
       }
     var methodName = baseName + paramsSuffix(decl, baseName: baseName)
+    if needsSuffix(for: baseName) {
+      methodName = Self.disambiguatedAccessorName(decl, baseName: baseName) ?? methodName
+    }
     if Self.javaKeywords.contains(methodName) || Self.finalObjectMethods.contains(methodName) {
       methodName += "_"
     }
@@ -94,6 +97,24 @@ package struct JavaIdentifierFactory {
       // Join labels in camelCase: takeValue(a:) → takeValueA
       return labels.map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
     }
+  }
+
+  /// Accessors whose Java names clash: `let live: Bool` and `var isLive: Bool` both read as `isLive()`,
+  /// and a static and an instance property with the same name both read as `getName()`. The accessor
+  /// whose Swift name differs from the Java Beans name falls back to the plain `get`/`set` name
+  /// (`getLive()`, `setIsLive(_:)`); a static one that still clashes gets a `_` suffix.
+  private static func disambiguatedAccessorName(_ decl: ExtractedFunc, baseName: String) -> String? {
+    let prefix: String
+    switch decl.apiKind {
+    case .getter, .subscriptGetter: prefix = "get"
+    case .setter, .subscriptSetter: prefix = "set"
+    default: return nil
+    }
+    let plainName = prefix + decl.name.firstCharacterUppercased
+    if decl.name != baseName, plainName != baseName {
+      return plainName
+    }
+    return decl.isStatic ? baseName + "_" : nil
   }
 
   private static func javaOperatorName(_ swiftName: String) -> String {
