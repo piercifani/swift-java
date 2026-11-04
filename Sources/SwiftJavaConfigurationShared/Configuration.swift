@@ -181,6 +181,13 @@ public struct Configuration: Codable {
     enableJavaCallbacks ?? false
   }
 
+  /// If true, JExtract fails after generating when it skipped any declaration it could not
+  /// extract or translate, and lists each one. Skipped declarations are always reported as warnings.
+  public var failOnSkippedDeclarations: Bool?
+  public var effectiveFailOnSkippedDeclarations: Bool {
+    failOnSkippedDeclarations ?? false
+  }
+
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
   public var generatedJavaSourcesListFileOutput: String?
 

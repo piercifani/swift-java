@@ -63,8 +63,11 @@ extension SwiftJava {
     )
     var inputSwift: String? = nil
 
-    @Option(name: .shortAndLong, help: "Configure the level of logs that should be printed")
-    var logLevel: LogLevel = .info
+    @Option(
+      name: .shortAndLong,
+      help: "Configure the level of logs that should be printed (default: the config's 'logLevel', or 'info')"
+    )
+    var logLevel: LogLevel? = nil
 
     @Option(help: "A path to a custom swift-java.config to use")
     var config: String? = nil

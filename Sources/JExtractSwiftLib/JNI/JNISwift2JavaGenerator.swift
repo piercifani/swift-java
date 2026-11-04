@@ -37,6 +37,9 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
 
   let javaClassLookupTable: JavaClassLookupTable
   let moduleJavaPackages: ModuleJavaPackages
+  /// Dependency modules extracted with `enableJavaCallbacks`: their protocols have public Swift
+  /// wrappers, so Java implementations of them can be passed to this module too.
+  let javaCallbackModules: Set<String>
 
   var javaPackagePath: String {
     javaPackage.replacingOccurrences(of: ".", with: "/")
@@ -44,8 +47,14 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
 
   var thunkNameRegistry = ThunkNameRegistry()
 
+  /// Declarations JNI translation skipped, as "name: reason", for `failOnSkippedDeclarations`.
+  package var skippedDeclarations: [String] = []
+
   /// Jextracted types that already have a minimal JavaKit class wrapper printed for closures.
   var printedMinimalJavaClassWrappers: Set<String> = []
+  /// Overloads for default arguments share their closure parameters' wrappers and Java interfaces.
+  var printedEscapingClosureWrappers: Set<String> = []
+  var printedJavaClosureHelperClasses: Set<String> = []
 
   /// Accumulates every ``@_cdecl`` symbol name emitted during thunk printing.
   /// Written to a linker version script after generation when
@@ -53,8 +62,8 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
   var generatedCDeclSymbolNames: [String] = []
 
   /// Cached Java translation result. 'nil' indicates failed translation.
-  var translatedDecls: [ExtractedFunc: TranslatedFunctionDecl] = [:]
-  var translatedEnumCases: [ExtractedEnumCase: TranslatedEnumCase] = [:]
+  var translatedDecls: [ExtractedFunc: TranslatedFunctionDecl?] = [:]
+  var translatedEnumCases: [ExtractedEnumCase: TranslatedEnumCase?] = [:]
 
   /// Module-qualified identities of extracted types that are surfaced to Java as `SwiftError` exceptions.
   lazy var swiftErrorTypes: Set<SwiftNominalIdentity> = Set(
@@ -85,6 +94,7 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     javaOutputDirectory: String,
     javaClassLookupTable: JavaClassLookupTable,
     moduleJavaPackages: ModuleJavaPackages,
+    javaCallbackModules: Set<String> = [],
   ) {
     self.config = config
     self.logger = Logger(label: "jni-generator", logLevel: translator.log.logLevel)
@@ -95,6 +105,7 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     self.javaOutputDirectory = javaOutputDirectory
     self.javaClassLookupTable = javaClassLookupTable
     self.moduleJavaPackages = moduleJavaPackages
+    self.javaCallbackModules = javaCallbackModules
     self.lookupContext = translator.lookupContext
 
     // If we are forced to write empty files, construct the expected outputs.
@@ -133,6 +144,8 @@ package class JNISwift2JavaGenerator: Swift2JavaGenerator {
     // Expand variadic functions into N overloads
     var expandedAnalysis = analysis
     expandedAnalysis.expandVariadicOverloads(maxOverloads: config.effectiveMaxVariadicOverloads)
+    // Default arguments become overloads without the trailing defaulted parameters
+    expandedAnalysis.expandDefaultArgumentOverloads()
     self.analysis = expandedAnalysis
 
     // Every extracted protocol that also gets a plain Java `interface`
@@ -174,6 +187,49 @@ extension JNISwift2JavaGenerator {
       .compactMap {
         self.analysis.extractedTypes[$0.qualifiedName]
       }
+  }
+
+  /// Whether `type` is a concrete (non-generic) Swift class whose Java class can take part in a
+  /// Java class hierarchy.
+  func isHierarchyClass(_ type: ExtractedNominalType) -> Bool {
+    type.swiftNominal.kind == .class && !type.swiftNominal.isGeneric && !type.isSpecialization
+      && !self.isSwiftErrorType(type)
+  }
+
+  /// The extracted superclass of `type` in this module, which its Java class extends.
+  func extractedSuperclass(of type: ExtractedNominalType) -> ExtractedNominalType? {
+    guard isHierarchyClass(type) else { return nil }
+    return type.inheritedTypes
+      .compactMap(\.asNominalTypeDeclaration)
+      .filter { $0.kind == .class }
+      .compactMap { self.analysis.extractedTypes[$0.qualifiedName] }
+      .first(where: isHierarchyClass)
+  }
+
+  /// Extracted classes in this module that inherit from `type`, directly or not, deepest first, so
+  /// the most specific Java class is matched first when wrapping an instance of its dynamic type.
+  func extractedSubclasses(of type: ExtractedNominalType) -> [ExtractedNominalType] {
+    func depth(_ type: ExtractedNominalType) -> Int {
+      extractedSuperclass(of: type).map { depth($0) + 1 } ?? 0
+    }
+    func inherits(_ candidate: ExtractedNominalType) -> Bool {
+      var current = extractedSuperclass(of: candidate)
+      while let superclass = current {
+        if superclass.swiftNominal.qualifiedName == type.swiftNominal.qualifiedName { return true }
+        current = extractedSuperclass(of: superclass)
+      }
+      return false
+    }
+    return analysis.extractedTypes.values
+      .filter(inherits)
+      .sorted { (depth($0), $0.swiftNominal.qualifiedName) > (depth($1), $1.swiftNominal.qualifiedName) }
+  }
+
+  /// Whether `type`'s Java class can be extended: it's `open`, or has extracted subclasses.
+  func isExtendableClass(_ type: ExtractedNominalType) -> Bool {
+    guard isHierarchyClass(type) else { return false }
+    let isOpen = type.swiftNominal.syntax.modifiers.contains { $0.name.tokenKind == .keyword(.open) }
+    return isOpen || !extractedSubclasses(of: type).isEmpty
   }
 
   /// Whether `type` conforms to `Error` and is surfaced to Java as a `SwiftError` subclass.

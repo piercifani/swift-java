@@ -45,16 +45,25 @@ extension JNISwift2JavaGenerator {
     do {
       translated = try self.javaTranslator.translate(decl)
     } catch {
-      self.logger.debug("Failed to translate: '\(decl.swiftDecl.qualifiedNameForDebug)'; \(error)")
+      reportSkipped(decl.swiftDecl.qualifiedNameForDebug, reason: "\(error)")
       translated = nil
     }
 
     if let candidate = translated, collidesWithThrowableMember(candidate, of: decl) {
+      skippedDeclarations.append("\(decl.swiftDecl.qualifiedNameForDebug): collides with a java.lang.Throwable member")
       translated = nil
     }
 
-    translatedDecls[decl] = translated
+    // `updateValue` so a failure (nil) is cached too; subscript-assigning nil would remove the key.
+    translatedDecls.updateValue(translated, forKey: decl)
     return translated
+  }
+
+  /// Logs a declaration that analysis accepted but JNI translation could not handle, and records it
+  /// for `failOnSkippedDeclarations`. These used to be logged at debug level only.
+  private func reportSkipped(_ name: String, reason: String) {
+    self.logger.warning("Failed to translate: '\(name)' in module '\(swiftModuleName)'; \(reason)")
+    skippedDeclarations.append("\(name): \(reason)")
   }
 
   /// Zero-argument `Throwable` members that a generated `SwiftError` subclass cannot redeclare with another meaning.
@@ -111,11 +120,11 @@ extension JNISwift2JavaGenerator {
       )
       translated = try translation.translate(enumCase: decl)
     } catch {
-      self.logger.debug("Failed to translate: '\(decl.swiftDecl.qualifiedNameForDebug)'; \(error)")
+      reportSkipped(decl.swiftDecl.qualifiedNameForDebug, reason: "\(error)")
       translated = nil
     }
 
-    translatedEnumCases[decl] = translated
+    translatedEnumCases.updateValue(translated, forKey: decl)
     return translated
   }
 

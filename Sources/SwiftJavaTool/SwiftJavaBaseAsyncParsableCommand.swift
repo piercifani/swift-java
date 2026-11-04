@@ -106,7 +106,7 @@ extension SwiftJavaBaseAsyncParsableCommand {
 
   var logLevel: LogLevel {
     get {
-      self.commonOptions.logLevel
+      self.commonOptions.logLevel ?? .info
     }
     set {
       self.commonOptions.logLevel = newValue
@@ -183,7 +183,11 @@ extension SwiftJavaBaseAsyncParsableCommand {
       config = Configuration()
     }
     // override configuration with options from command line
-    config.logLevel = command.logLevel
+    if let logLevel = command.commonOptions.logLevel {
+      config.logLevel = logLevel
+    } else if config.logLevel == nil {
+      config.logLevel = .info
+    }
     return config
   }
 }
