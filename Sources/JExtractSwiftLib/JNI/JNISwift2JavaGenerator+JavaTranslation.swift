@@ -291,7 +291,8 @@ extension JNISwift2JavaGenerator {
       // Closures.
       var funcTypes: [TranslatedFunctionType] = []
       for (idx, param) in decl.functionSignature.parameters.enumerated() {
-        let parameterName = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
+        // Named like the Java parameter whose type this interface is (see `translateParameters`).
+        let parameterName = (param.parameterName ?? "arg\(idx)").javaSafeIdentifier
 
         switch Self.closureType(param.type) {
         case .some((let funcTy, _)):
