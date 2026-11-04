@@ -26,6 +26,7 @@ extension JNISwift2JavaGenerator {
     var knownTypes: SwiftKnownTypes
     let protocolWrappers: [ExtractedNominalType: JavaInterfaceSwiftWrapper]
     let logger: Logger
+    var javaCallbackModules: Set<String> = []
 
     /// Translates a Swift function into the native JNI method signature.
     func translate(
@@ -505,6 +506,7 @@ extension JNISwift2JavaGenerator {
       // Swift wrappers for all the protocol types.
       let allowsJavaImplementations = protocolTypes.allSatisfy { protocolType in
         self.protocolWrappers.contains(where: { $0.value.protocolType == protocolType })
+          || javaCallbackModules.contains(protocolType.nominalTypeDecl.moduleName)
       }
 
       return NativeParameter(

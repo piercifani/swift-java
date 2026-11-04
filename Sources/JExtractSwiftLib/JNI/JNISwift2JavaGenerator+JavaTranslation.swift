@@ -29,6 +29,7 @@ extension JNISwift2JavaGenerator {
       knownTypes: SwiftKnownTypes(symbolTable: lookupContext.symbolTable),
       protocolWrappers: self.interfaceProtocolWrappers,
       logger: self.logger,
+      javaCallbackModules: self.javaCallbackModules,
       errorTypes: self.swiftErrorTypes,
       javaIdentifiers: self.currentJavaIdentifiers
     )
@@ -115,6 +116,7 @@ extension JNISwift2JavaGenerator {
         knownTypes: SwiftKnownTypes(symbolTable: lookupContext.symbolTable),
         protocolWrappers: self.interfaceProtocolWrappers,
         logger: self.logger,
+        javaCallbackModules: self.javaCallbackModules,
         errorTypes: self.swiftErrorTypes,
         javaIdentifiers: self.currentJavaIdentifiers,
       )
@@ -137,6 +139,7 @@ extension JNISwift2JavaGenerator {
     var knownTypes: SwiftKnownTypes
     let protocolWrappers: [ExtractedNominalType: JavaInterfaceSwiftWrapper]
     let logger: Logger
+    var javaCallbackModules: Set<String> = []
     /// Module-qualified identities of extracted types that are surfaced to Java as `SwiftError` exceptions.
     let errorTypes: Set<SwiftNominalIdentity>
     var javaIdentifiers: JavaIdentifierFactory
@@ -145,7 +148,7 @@ extension JNISwift2JavaGenerator {
       let methodName = "" // TODO: Used for closures, replace with better name?
 
       let parameterResults = try enumCase.parameters.enumerated().map { idx, parameter in
-        let resultName = parameter.name ?? "arg\(idx)"
+        let resultName = (parameter.name ?? "arg\(idx)").javaSafeIdentifier
         let translatedResult = try self.translateResult(
           swiftType: parameter.type,
           methodName: methodName,
@@ -210,6 +213,7 @@ extension JNISwift2JavaGenerator {
         knownTypes: self.knownTypes,
         protocolWrappers: self.protocolWrappers,
         logger: self.logger,
+        javaCallbackModules: self.javaCallbackModules,
       )
 
       // Types with no parent will be outputted inside a "module" class.
@@ -223,15 +227,46 @@ extension JNISwift2JavaGenerator {
       // Name.
       let javaName = javaIdentifiers.makeJavaMethodName(decl)
 
+      // A function returning `AsyncStream<T>` or `AsyncThrowingStream<T, _>` is translated as returning `T`, then converted to a stream.
+      var resultSignature = decl.functionSignature
+      let streamElementType = Self.asyncStreamElementType(decl.functionSignature.result.type)
+      if let streamElementType {
+        if decl.functionSignature.isAsync || decl.functionSignature.isIsolated || decl.functionSignature.isImplicitlyAsync {
+          throw JavaTranslationError.unsupportedSwiftType(decl.functionSignature.result.type)
+        }
+        resultSignature.result = SwiftResult(convention: .direct, type: streamElementType)
+      }
+      // A returned closure crosses as the handle of a Swift closure; Java wraps it in a lambda, below.
+      let closureResult = Self.closureType(decl.functionSignature.result.type).map { closureType, isOptional in
+        var closureType = closureType
+        closureType.isEscaping = true
+        return (closureType, isOptional)
+      }
+      if closureResult != nil {
+        if decl.functionSignature.isAsync || decl.functionSignature.isIsolated || decl.functionSignature.isImplicitlyAsync {
+          throw JavaTranslationError.unsupportedSwiftType(decl.functionSignature.result.type)
+        }
+        resultSignature.result = SwiftResult(convention: .direct, type: knownTypes.int64)
+      }
+
       // Swift -> Java
       var translatedFunctionSignature = try self.translate(
-        functionSignature: decl.functionSignature,
+        functionSignature: resultSignature,
         methodName: javaName,
         parentName: parentName,
       )
+      // The declaration's own optionals only: closures and other nested signatures keep `Optional`.
+      if config.effectiveOptionalsAsNullable {
+        for (idx, parameter) in resultSignature.parameters.enumerated() where Self.isOptional(parameter.type) {
+          translatedFunctionSignature.parameters[idx] = nullable(translatedFunctionSignature.parameters[idx])
+        }
+        if Self.isOptional(resultSignature.result.type) {
+          translatedFunctionSignature.result = nullable(translatedFunctionSignature.result, resultName: "result")
+        }
+      }
       // Java -> Java (native)
       var nativeFunctionSignature = try nativeTranslation.translate(
-        functionSignature: decl.functionSignature,
+        functionSignature: resultSignature,
         translatedFunctionSignature: translatedFunctionSignature,
         methodName: javaName,
         parentName: parentName,
@@ -240,10 +275,10 @@ extension JNISwift2JavaGenerator {
       // Closures.
       var funcTypes: [TranslatedFunctionType] = []
       for (idx, param) in decl.functionSignature.parameters.enumerated() {
-        let parameterName = param.parameterName ?? "_\(idx)"
+        let parameterName = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
 
-        switch param.type {
-        case .function(let funcTy):
+        switch Self.closureType(param.type) {
+        case .some((let funcTy, _)):
           var translatedClosure = try translateFunctionType(
             name: parameterName,
             swiftType: funcTy,
@@ -263,9 +298,53 @@ extension JNISwift2JavaGenerator {
               nativeFunctionSignature.parameters[idx].syntheticClosure
           }
           funcTypes.append(translatedClosure)
-        default:
+        case .none:
           break
         }
+      }
+
+      var closureHelperClassName = javaName
+      if let (closureType, isOptional) = closureResult {
+        // A getter returns the closure type its setter takes, so Kotlin sees one property.
+        var interfaceName = "result"
+        if decl.apiKind == .getter, Self.hasSetter(decl, config: config) {
+          closureHelperClassName = "set\(decl.name.firstCharacterUppercased)"
+          interfaceName = "newValue"
+        }
+        let translatedClosure = try translateFunctionType(
+          name: interfaceName,
+          swiftType: closureType,
+          parentName: parentName,
+        )
+        funcTypes.append(translatedClosure)
+        let interfaceType = JavaType.class(
+          package: javaPackage,
+          name: String.javaQualifiedName(parentName.fullName, closureHelperClassName, interfaceName)
+        )
+        let nullable = isOptional && config.effectiveOptionalsAsNullable
+        translatedFunctionSignature.result = TranslatedResult(
+          javaType: isOptional && !nullable ? .optional(interfaceType) : interfaceType,
+          nativeJavaType: .long,
+          outParameters: [],
+          conversion: .swiftClosure(
+            .placeholder,
+            interfaceType: interfaceType,
+            parameters: translatedClosure.parameters.map(\.parameter.type.javaType),
+            result: translatedClosure.result.javaType,
+            optional: isOptional ? (nullable ? .nullable : .javaOptional) : nil
+          )
+        )
+        nativeFunctionSignature.result = try nativeTranslation.translateSwiftClosureResult(
+          closureType,
+          isOptional: isOptional
+        )
+      }
+
+      if streamElementType != nil {
+        try self.convertToAsyncStream(
+          translatedFunctionSignature: &translatedFunctionSignature,
+          nativeFunctionSignature: &nativeFunctionSignature
+        )
       }
 
       // Handle async methods and isolated methods
@@ -278,6 +357,30 @@ extension JNISwift2JavaGenerator {
           originalFunctionSignature: decl.functionSignature,
           mode: config.effectiveAsyncFuncMode,
         )
+      }
+
+      // Kotlin's view of the declaration's own parameters and result, after every conversion above.
+      let resultIsNullable =
+        config.effectiveOptionalsAsNullable && Self.isOptional(decl.functionSignature.result.type)
+        && streamElementType == nil
+        && !(decl.functionSignature.isAsync || decl.functionSignature.isIsolated || decl.functionSignature.isImplicitlyAsync)
+      if let annotation = nullabilityAnnotation(translatedFunctionSignature.result.javaType, nullable: resultIsNullable) {
+        translatedFunctionSignature.result.annotations.append(annotation)
+      }
+      for (idx, parameter) in decl.functionSignature.parameters.enumerated() {
+        let nullable = config.effectiveOptionalsAsNullable && Self.isOptional(parameter.type)
+        let translated = translatedFunctionSignature.parameters[idx]
+        let javaType = translated.parameter.type
+        if !javaType.isPrimitive, let annotation = nullabilityAnnotation(javaType.javaType, nullable: nullable) {
+          translatedFunctionSignature.parameters[idx] = TranslatedParameter(
+            parameter: JavaParameter(
+              name: translated.parameter.name,
+              type: javaType,
+              annotations: translated.parameter.annotations + [annotation]
+            ),
+            conversion: translated.conversion
+          )
+        }
       }
 
       var thrownJavaType: JavaType?
@@ -302,6 +405,7 @@ extension JNISwift2JavaGenerator {
         isImplicitlyAsync: decl.functionSignature.isImplicitlyAsync,
         nativeFunctionName: "$\(javaName)",
         parentName: parentName,
+        closureHelperClassName: closureHelperClassName,
         functionTypes: funcTypes,
         translatedFunctionSignature: translatedFunctionSignature,
         nativeFunctionSignature: nativeFunctionSignature,
@@ -317,7 +421,7 @@ extension JNISwift2JavaGenerator {
       var translatedParams: [TranslatedParameter] = []
 
       for (i, param) in swiftType.parameters.enumerated() {
-        let paramName = param.parameterName ?? "_\(i)"
+        let paramName = (param.parameterName ?? "_\(i)").javaSafeIdentifier
         translatedParams.append(
           try translateParameter(
             swiftType: param.type,
@@ -331,7 +435,11 @@ extension JNISwift2JavaGenerator {
         )
       }
 
-      let translatedResult = try translateResult(swiftType: swiftType.resultType, methodName: name)
+      var translatedResult = try translateResult(swiftType: swiftType.resultType, methodName: name)
+      // An async closure implemented in Java returns a future, which Swift awaits.
+      if swiftType.isAsync {
+        translatedResult.javaType = .completableFuture(translatedResult.javaType)
+      }
 
       return TranslatedFunctionType(
         name: name,
@@ -401,7 +509,7 @@ extension JNISwift2JavaGenerator {
       genericRequirements: [SwiftGenericRequirement],
     ) throws -> [TranslatedParameter] {
       try parameters.enumerated().map { idx, param in
-        let parameterName = param.name ?? "arg\(idx)"
+        let parameterName = (param.name ?? "arg\(idx)").javaSafeIdentifier
         return try translateParameter(
           swiftType: param.type,
           parameterName: parameterName,
@@ -481,6 +589,14 @@ extension JNISwift2JavaGenerator {
       // If the result type should cause any annotations on the method, include them here.
       let parameterAnnotations: [JavaAnnotation] = getJavaTypeAnnotations(swiftType: swiftType, config: config)
 
+      // A Swift error is a Java `Throwable`.
+      if swiftType.isSwiftError {
+        return TranslatedParameter(
+          parameter: JavaParameter(name: parameterName, type: .javaLangThrowable, annotations: parameterAnnotations),
+          conversion: .placeholder
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
@@ -488,6 +604,34 @@ extension JNISwift2JavaGenerator {
         if let knownType = nominalType.asKnownType {
           switch knownType {
           case .optional(let wrapped):
+            if wrapped.isSwiftError {
+              return TranslatedParameter(
+                parameter: JavaParameter(
+                  name: parameterName,
+                  type: .optional(.javaLangThrowable),
+                  annotations: parameterAnnotations
+                ),
+                conversion: .method(.placeholder, function: "orElse", arguments: [.constant("null")])
+              )
+            }
+            if let (functionType, _) = Self.closureType(swiftType) {
+              let closure = translateFunctionParameter(
+                swiftType: .function(functionType),
+                functionType: functionType,
+                parameterName: parameterName,
+                methodName: methodName,
+                parentName: parentName,
+                parameterAnnotations: parameterAnnotations
+              )
+              return TranslatedParameter(
+                parameter: JavaParameter(
+                  name: parameterName,
+                  type: .optional(closure.parameter.type.javaType),
+                  annotations: parameterAnnotations
+                ),
+                conversion: .method(.placeholder, function: "orElse", arguments: [.constant("null")])
+              )
+            }
             return try translateOptionalParameter(
               wrappedType: wrapped,
               parameterName: parameterName,
@@ -520,7 +664,12 @@ extension JNISwift2JavaGenerator {
               genericRequirements: genericRequirements,
             )
 
-          case .foundationDate, .essentialsDate, .foundationData, .essentialsData, .foundationURL, .essentialsURL:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationURL where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsURL where !config.effectiveFoundationTypesAsJavaTypes:
             break // Handled as wrapped struct
 
           case .unsafeRawBufferPointer, .unsafeMutableRawBufferPointer:
@@ -704,6 +853,59 @@ extension JNISwift2JavaGenerator {
       )
     }
 
+    /// The element type of an `AsyncStream<Element>` or `AsyncThrowingStream<Element, Failure>`, or nil.
+    static func asyncStreamElementType(_ type: SwiftType) -> SwiftType? {
+      guard case .nominal(let nominal) = type else {
+        return nil
+      }
+      switch nominal.asKnownType {
+      case .asyncStream(let element), .asyncThrowingStream(let element):
+        return element
+      default:
+        return nil
+      }
+    }
+
+    /// Turns a function translated as returning `T` into one returning a `SwiftAsyncStream<T>`: Java
+    /// passes a stream for Swift to attach the `AsyncStream` to, and maps each delivered element
+    /// with the conversion it would apply to a `T` result.
+    func convertToAsyncStream(
+      translatedFunctionSignature: inout TranslatedFunctionSignature,
+      nativeFunctionSignature: inout NativeFunctionSignature
+    ) throws {
+      let element = translatedFunctionSignature.result
+      let nativeElement = nativeFunctionSignature.result
+      // Elements arrive one at a time as a single Java value; indirect returns (out parameters) don't fit.
+      guard element.outParameters.isEmpty, nativeElement.outParameters.isEmpty, !nativeElement.javaType.isVoid else {
+        throw JavaTranslationError.asyncStreamElementNotSupported
+      }
+      let nativeStreamType = JavaType.swiftAsyncStream(nativeElement.javaType)
+
+      translatedFunctionSignature.result = TranslatedResult(
+        javaType: .swiftAsyncStream(element.javaType),
+        nativeJavaType: .void,
+        annotations: element.annotations,
+        outParameters: [OutParameter(name: "stream$", type: nativeStreamType, allocation: .new)],
+        conversion: .method(
+          .constant("stream$"),
+          function: "map",
+          arguments: [
+            .lambda(
+              args: ["element$"],
+              body: .replacingPlaceholder(element.conversion, placeholder: "element$")
+            )
+          ]
+        )
+      )
+
+      nativeFunctionSignature.result.conversion = .attachAsyncStream(
+        elementConversion: nativeElement.conversion,
+        elementJavaType: nativeElement.javaType
+      )
+      nativeFunctionSignature.result.javaType = .void
+      nativeFunctionSignature.result.outParameters.append(.init(name: "result_stream", type: nativeStreamType))
+    }
+
     func convertToAsync(
       translatedFunctionSignature: inout TranslatedFunctionSignature,
       nativeFunctionSignature: inout NativeFunctionSignature,
@@ -737,21 +939,29 @@ extension JNISwift2JavaGenerator {
       )
 
       let result = translatedFunctionSignature.result
+      let convertedFuture = JavaNativeConversionStep.method(
+        .constant("future$"),
+        function: "thenApply",
+        arguments: [
+          .lambda(
+            args: ["futureResult$"],
+            body: .replacingPlaceholder(result.conversion, placeholder: "futureResult$")
+          )
+        ]
+      )
       translatedFunctionSignature.result = TranslatedResult(
         javaType: translatedFutureType,
         nativeJavaType: .void,
         annotations: result.annotations,
         outParameters: result.outParameters + [futureOutParameter],
-        conversion: .method(
-          .constant("future$"),
-          function: "thenApply",
-          arguments: [
-            .lambda(
-              args: ["futureResult$"],
-              body: .replacingPlaceholder(result.conversion, placeholder: "futureResult$")
-            )
-          ]
-        )
+        // Cancelling the returned (derived) future must reach `future$`, which the Swift task watches.
+        conversion: mode == .completableFuture
+          ? .method(
+            .constant("org.swift.swiftkit.core.CompletableFutureCancellation"),
+            function: "forwardCancellation",
+            arguments: [convertedFuture, .constant("future$")]
+          )
+          : convertedFuture
       )
 
       // Update native function
@@ -761,6 +971,7 @@ extension JNISwift2JavaGenerator {
         isThrowing: originalFunctionSignature.isThrowing || originalFunctionSignature.isImplicitlyThrowing,
         completeMethodID: completeMethodID,
         completeExceptionallyMethodID: completeExceptionallyMethodID,
+        cancelsTaskWithFuture: mode == .completableFuture,
       )
       nativeFunctionSignature.result.javaType = .void
       nativeFunctionSignature.result.outParameters.append(.init(name: "result_future", type: nativeFutureType))
@@ -775,7 +986,7 @@ extension JNISwift2JavaGenerator {
       parameterAnnotations: [JavaAnnotation]
     ) -> TranslatedParameter {
       let interfacejavaType =
-        if let known = KnownJavaFunctionalInterface.find(functionType) {
+        if let known = KnownJavaFunctionalInterface.find(functionType, closureMethodName: config.effectiveClosureMethodName) {
           known.javaType
         } else {
           JavaType.class(
@@ -851,6 +1062,107 @@ extension JNISwift2JavaGenerator {
       )
     }
 
+    /// The closure type of a closure or optional closure. An optional closure is escaping: it can be stored, and
+    /// only escaping closure types get their own functional interface.
+    static func closureType(_ type: SwiftType) -> (SwiftFunctionType, isOptional: Bool)? {
+      switch type {
+      case .function(let functionType):
+        return (functionType, false)
+      case .nominal(let nominal):
+        guard case .optional(.function(var functionType)) = nominal.asKnownType else {
+          return nil
+        }
+        functionType.isEscaping = true
+        return (functionType, true)
+      default:
+        return nil
+      }
+    }
+
+    /// Whether the property of this getter also has a setter.
+    static func hasSetter(_ getter: ExtractedFunc, config: Configuration) -> Bool {
+      guard let variable = getter.swiftDecl.as(VariableDeclSyntax.self), let binding = variable.bindings.first else {
+        return false
+      }
+      return variable.supportedAccessorKinds(
+        binding: binding,
+        minimumAccessLevel: config.effectiveMinimumInputAccessLevelMode
+      ).contains(.set)
+    }
+
+    /// The configured `nullableAnnotation` or `nonNullAnnotation` for a reference type.
+    func nullabilityAnnotation(_ javaType: JavaType, nullable: Bool) -> JavaAnnotation? {
+      if javaType.isPrimitive {
+        return nil
+      }
+      return (nullable ? config.nullableAnnotation : config.nonNullAnnotation).map { JavaAnnotation(className: $0) }
+    }
+
+    static func isOptional(_ type: SwiftType) -> Bool {
+      if case .nominal(let nominal) = type, nominal.nominalTypeDecl.knownTypeKind == .optional {
+        return true
+      }
+      return false
+    }
+
+    /// The wrapped Java type of a Java optional type, boxed, with the method that unwraps a present value.
+    private func nullableType(ofOptional type: JavaType) -> (type: JavaType, getter: String)? {
+      guard case .class(_, let name, let typeParameters) = type else {
+        return nil
+      }
+      // Spelled as one class name, such as `Optional<Boolean>` or `Optional<java.net.URI>`. The dots in
+      // the latter split it into a package and a name, so match the whole spelling.
+      let spelling = type.description
+      if typeParameters.isEmpty, spelling.hasPrefix("Optional<"), spelling.hasSuffix(">") {
+        return (JavaType(className: String(spelling.dropFirst("Optional<".count).dropLast())), "get")
+      }
+      switch name {
+      case "OptionalLong": return (.class(package: "java.lang", name: "Long"), "getAsLong")
+      case "OptionalInt": return (.class(package: "java.lang", name: "Integer"), "getAsInt")
+      case "OptionalDouble": return (.class(package: "java.lang", name: "Double"), "getAsDouble")
+      case "Optional" where typeParameters.count == 1: return (typeParameters[0], "get")
+      default: return nil
+      }
+    }
+
+    /// With `optionalsAsNullable`, an optional parameter takes the wrapped type, `null` for `nil`, and
+    /// makes the `Optional` the translated conversion expects.
+    func nullable(_ parameter: TranslatedParameter) -> TranslatedParameter {
+      guard let (wrapped, _) = nullableType(ofOptional: parameter.parameter.type.javaType),
+        case .class(_, let optionalClass, _) = parameter.parameter.type.javaType
+      else {
+        return parameter
+      }
+      let name = parameter.parameter.name
+      let optional =
+        switch optionalClass {
+        case "OptionalLong", "OptionalInt", "OptionalDouble":
+          "(\(name) == null ? \(optionalClass).empty() : \(optionalClass).of(\(name)))"
+        default:
+          "Optional.ofNullable(\(name))"
+        }
+      return TranslatedParameter(
+        parameter: JavaParameter(name: name, type: wrapped, annotations: parameter.parameter.annotations),
+        conversion: .replacingPlaceholder(parameter.conversion, placeholder: optional)
+      )
+    }
+
+    /// With `optionalsAsNullable`, an optional result is its wrapped value, or `null` for `nil`.
+    func nullable(_ result: TranslatedResult, resultName: String) -> TranslatedResult {
+      guard let (wrapped, getter) = nullableType(ofOptional: result.javaType) else {
+        return result
+      }
+      let optional = "\(resultName)$optional"
+      var nullable = result
+      nullable.javaType = wrapped
+      nullable.conversion = .ternary(
+        .method(.placeToVar(result.conversion, name: optional, type: result.javaType), function: "isPresent"),
+        thenExp: .method(.constant(optional), function: getter),
+        elseExp: .constant("null")
+      )
+      return nullable
+    }
+
     func translateOptionalParameter(
       wrappedType swiftType: SwiftType,
       parameterName: String,
@@ -865,11 +1177,13 @@ extension JNISwift2JavaGenerator {
 
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
           switch knownType {
-          case .foundationDate, .essentialsDate:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
-          case .foundationData, .essentialsData:
+          case .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
@@ -949,11 +1263,31 @@ extension JNISwift2JavaGenerator {
       // If the result type should cause any annotations on the method, include them here.
       let resultAnnotations: [JavaAnnotation] = getJavaTypeAnnotations(swiftType: swiftType, config: config)
 
+      // A Swift error is a Java `Throwable`, `null` for `nil`.
+      if swiftType.isSwiftError {
+        return TranslatedResult(
+          javaType: .javaLangThrowable,
+          nativeJavaType: .javaLangThrowable,
+          annotations: resultAnnotations,
+          outParameters: [],
+          conversion: .placeholder
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
         if let knownType = nominalType.asKnownType {
           switch knownType {
+          case .optional(let wrapped) where wrapped.isSwiftError:
+            return TranslatedResult(
+              javaType: .optional(.javaLangThrowable),
+              nativeJavaType: .javaLangThrowable,
+              annotations: resultAnnotations,
+              outParameters: [],
+              conversion: .method(.constant("java.util.Optional"), function: "ofNullable", arguments: [.placeholder])
+            )
+
           case .optional(let wrapped):
             return try translateOptionalResult(
               wrappedType: wrapped,
@@ -985,7 +1319,12 @@ extension JNISwift2JavaGenerator {
               genericRequirements: genericRequirements,
             )
 
-          case .foundationDate, .essentialsDate, .foundationData, .essentialsData, .foundationURL, .essentialsURL:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes,
+            .foundationURL where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsURL where !config.effectiveFoundationTypesAsJavaTypes:
             // Handled as wrapped struct
             break
 
@@ -1175,16 +1514,19 @@ extension JNISwift2JavaGenerator {
             )
             return .swiftSet(elementJavaType)
 
-          case .foundationDate, .essentialsDate:
+          case .foundationDate where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsDate where !config.effectiveFoundationTypesAsJavaTypes:
             return .class(package: nil, name: "Date")
 
-          case .foundationData, .essentialsData:
+          case .foundationData where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsData where !config.effectiveFoundationTypesAsJavaTypes:
             return .class(package: nil, name: "Data")
 
           case .foundationDataProtocol, .essentialsDataProtocol:
             return .class(package: nil, name: "DataProtocol")
 
-          case .foundationURL, .essentialsURL:
+          case .foundationURL where !config.effectiveFoundationTypesAsJavaTypes,
+            .essentialsURL where !config.effectiveFoundationTypesAsJavaTypes:
             return .class(package: nil, name: "URL")
 
           case .foundationUUID, .essentialsUUID:
@@ -1485,6 +1827,17 @@ extension JNISwift2JavaGenerator {
           conversion: .requireNonNull(.placeholder, message: "\(parameterName) must not be null")
         )
 
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        let javaType = try bridgedArrayElementJavaType(
+          elementType,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        return TranslatedParameter(
+          parameter: JavaParameter(name: parameterName, type: .array(javaType), annotations: parameterAnnotations),
+          conversion: .requireNonNull(.placeholder, message: "\(parameterName) must not be null")
+        )
+
       case .nominal(let nominalType):
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
           guard let javaType = JNIJavaTypeTranslator.translate(knownType: knownType, config: self.config) else {
@@ -1559,6 +1912,21 @@ extension JNISwift2JavaGenerator {
           conversion: .placeholder
         )
 
+      case .nominal(let nominalType) where nominalType.isBridgedArrayElement:
+        let javaType = try bridgedArrayElementJavaType(
+          elementType,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        // The native method returns the array `ArrayBridge` created, whose static type is `Object[]`.
+        return TranslatedResult(
+          javaType: .array(javaType),
+          nativeJavaType: .array(.javaLangObject),
+          annotations: annotations,
+          outParameters: [],
+          conversion: .cast(.placeholder, .array(javaType))
+        )
+
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
         if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
@@ -1619,6 +1987,28 @@ extension JNISwift2JavaGenerator {
       default:
         throw JavaTranslationError.unsupportedSwiftType(elementType)
       }
+    }
+
+    /// The Java type of an element converted by `ArrayBridge`. Its `OptionalBridge` always creates a
+    /// `java.util.Optional`, also for primitives (`Optional<Long>`, not `OptionalLong`).
+    func bridgedArrayElementJavaType(
+      _ swiftType: SwiftType,
+      genericParameters: [SwiftGenericParameterDeclaration],
+      genericRequirements: [SwiftGenericRequirement],
+    ) throws -> JavaType {
+      if case .nominal(let nominalType) = swiftType, case .optional(let wrapped) = nominalType.asKnownType {
+        let wrappedJavaType = try bridgedArrayElementJavaType(
+          wrapped,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        return .optional(wrappedJavaType.boxedType)
+      }
+      return try translateGenericTypeParameter(
+        swiftType,
+        genericParameters: genericParameters,
+        genericRequirements: genericRequirements,
+      )
     }
 
     func javaTypeForDictionaryComponent(
@@ -1777,6 +2167,9 @@ extension JNISwift2JavaGenerator {
 
     /// The name of the Java parent scope this function is declared in
     var parentName: SwiftQualifiedTypeName
+
+    /// The class holding `functionTypes`: the Java method name, or a getter's setter name.
+    var closureHelperClassName: String
 
     /// Functional interfaces required for the Java method.
     var functionTypes: [TranslatedFunctionType]
@@ -1993,11 +2386,29 @@ extension JNISwift2JavaGenerator {
 
     indirect case requireNonNull(JavaNativeConversionStep, message: String)
 
+    /// `(type) inner`
+    indirect case cast(JavaNativeConversionStep, JavaType)
+
     /// Constructs a TupleN from out-parameter arrays.
     /// E.g. `new Tuple2<>(result_0$[0], result_1$[0])`
     case tupleFromOutParams(tupleClassName: String, elements: [(outParamName: String, elementConversion: JavaNativeConversionStep)])
 
     indirect case placeToVar(JavaNativeConversionStep, name: String, type: JavaType? = nil)
+
+    /// A lambda of `interfaceType` over the Swift closure whose handle is the inner value; its arguments
+    /// and result are boxed through `SwiftClosure.call`. Optional when the handle may be 0, for `nil`.
+    indirect case swiftClosure(
+      JavaNativeConversionStep,
+      interfaceType: JavaType,
+      parameters: [JavaType],
+      result: JavaType,
+      optional: OptionalForm?
+    )
+
+    enum OptionalForm {
+      case nullable
+      case javaOptional
+    }
 
     /// `Arrays.stream(args)`
     static func arraysStream(_ argument: JavaNativeConversionStep) -> JavaNativeConversionStep {
@@ -2159,6 +2570,9 @@ extension JNISwift2JavaGenerator {
         let inner = inner.render(&printer, placeholder)
         return #"Objects.requireNonNull(\#(inner), "\#(message)")"#
 
+      case .cast(let inner, let type):
+        return "(\(type)) \(inner.render(&printer, placeholder))"
+
       case .tupleFromOutParams(let tupleClassName, let elements):
         var args: [String] = []
         for element in elements {
@@ -2172,6 +2586,29 @@ extension JNISwift2JavaGenerator {
         let type = type?.description ?? "var"
         printer.print("\(type) \(name) = \(inner);")
         return name
+
+      case .swiftClosure(let inner, let interfaceType, let parameters, let result, let optional):
+        let handle = inner.render(&printer, placeholder)
+        let closureClass = "org.swift.swiftkit.core.SwiftClosure"
+        if optional == nil {
+          printer.print("\(closureClass) closure$ = new \(closureClass)(\(handle));")
+        } else {
+          printer.print("long closure$handle = \(handle);")
+          printer.print("\(closureClass) closure$ = closure$handle == 0 ? null : new \(closureClass)(closure$handle);")
+        }
+        let names = parameters.indices.map { "closure$\($0)" }
+        let lambdaParameters = zip(parameters, names).map { "\($0) \($1)" }.joined(separator: .comma)
+        let call = "closure$.call(\(names.joined(separator: .comma)))"
+        let body = result == .void ? call : "(\(result)) \(call)"
+        let lambda = "(\(interfaceType)) (\(lambdaParameters)) -> \(body)"
+        switch optional {
+        case nil:
+          return lambda
+        case .nullable:
+          return "closure$ == null ? null : \(lambda)"
+        case .javaOptional:
+          return "java.util.Optional.ofNullable(closure$ == null ? null : \(lambda))"
+        }
       }
     }
 
@@ -2232,13 +2669,16 @@ extension JNISwift2JavaGenerator {
       case .print(let inner):
         return inner.requiresSwiftArena
 
-      case .requireNonNull(let inner, _):
+      case .requireNonNull(let inner, _), .cast(let inner, _):
         return inner.requiresSwiftArena
 
       case .tupleFromOutParams(_, let elements):
         return elements.contains(where: { $0.elementConversion.requiresSwiftArena })
 
       case .placeToVar(let inner, _, _):
+        return inner.requiresSwiftArena
+
+      case .swiftClosure(let inner, _, _, _, _):
         return inner.requiresSwiftArena
       }
     }
@@ -2270,6 +2710,12 @@ extension JNISwift2JavaGenerator {
 
     /// `inout` parameters have no Java equivalent yet.
     case inoutParametersNotSupported
+
+    /// Java can implement `async` protocol requirements only in `completableFuture` async mode.
+    case asyncRequirementNeedsCompletableFuture
+
+    /// `AsyncStream` elements must convert to a single Java value.
+    case asyncStreamElementNotSupported
 
     // FIXME: Remove once we support protocol variables
     case protocolVariablesNotSupported

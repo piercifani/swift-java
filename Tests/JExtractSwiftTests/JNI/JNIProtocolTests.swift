@@ -191,7 +191,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        final class _SwiftModule_takeGeneric_s_Wrapper: SwiftJavaSomeProtocolWrapper {
+        final class _SwiftModule_takeGeneric_s_Wrapper: SwiftJavaSomeProtocolWrapper, @unchecked Sendable {
           let _javaSomeProtocolInterface: JavaSomeProtocol
           init(_javaSomeProtocolInterface: JavaSomeProtocol) {
             self._javaSomeProtocolInterface = _javaSomeProtocolInterface
@@ -267,7 +267,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        final class _SwiftModule_takeGeneric_s_Wrapper: SwiftJavaSomeProtocolWrapper {
+        final class _SwiftModule_takeGeneric_s_Wrapper: SwiftJavaSomeProtocolWrapper, @unchecked Sendable {
           let _javaSomeProtocolInterface: JavaSomeProtocol
           init(_javaSomeProtocolInterface: JavaSomeProtocol) {
             self._javaSomeProtocolInterface = _javaSomeProtocolInterface
@@ -323,7 +323,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        final class _SwiftModule_takeComposite_x_Wrapper: SwiftJavaSomeProtocolWrapper, SwiftJavaBWrapper {
+        final class _SwiftModule_takeComposite_x_Wrapper: SwiftJavaSomeProtocolWrapper, SwiftJavaBWrapper, @unchecked Sendable {
           let _javaSomeProtocolInterface: JavaSomeProtocol
           let _javaBInterface: JavaB
           init(_javaSomeProtocolInterface: JavaSomeProtocol, _javaBInterface: JavaB) {
@@ -376,7 +376,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        protocol SwiftJavaSomeProtocolWrapper: SomeProtocol {
+        public protocol SwiftJavaSomeProtocolWrapper: SomeProtocol {
           var _javaSomeProtocolInterface: JavaSomeProtocol { get }
         }
         """,
@@ -385,16 +385,18 @@ struct JNIProtocolTests {
           public func method() {
             let environment$ = try! JavaVirtualMachine.shared().environment()
             try! environment$.withLocalFrame(capacity: 4) {
-              _javaSomeProtocolInterface.method()
+              let javaInterface$ = JavaSomeProtocol(javaThis: _javaSomeProtocolInterface.javaThis, environment: environment$)
+              javaInterface$.method()
             }
           }
           public func withObject(c: SomeClass) -> SomeClass {
             let environment$ = try! JavaVirtualMachine.shared().environment()
             return try! environment$.withLocalFrame(capacity: 6) {
+              let javaInterface$ = JavaSomeProtocol(javaThis: _javaSomeProtocolInterface.javaThis, environment: environment$)
               let cClass = try! JavaClass<JavaSomeClass>(environment: JavaVirtualMachine.shared().environment())
               let cPointer = UnsafeMutablePointer<SomeClass>.allocate(capacity: 1)
               cPointer.initialize(to: c)
-              guard let unwrapped$ = _javaSomeProtocolInterface.withObject(cClass.wrapMemoryAddressUnsafe(Int64(Int(bitPattern: cPointer))), JavaSwiftArena.defaultAutoArena) else {
+              guard let unwrapped$ = javaInterface$.withObject(cClass.wrapMemoryAddressUnsafe(Int64(Int(bitPattern: cPointer))), JavaSwiftArena.defaultAutoArena) else {
                 fatalError("Upcall to withObject unexpectedly returned nil")
               }
               let result$MemoryAddress$ = unwrapped$.as(JavaJNISwiftInstance.self)!.memoryAddress()
@@ -405,7 +407,7 @@ struct JNIProtocolTests {
         }
         """,
         """
-        protocol SwiftJavaBWrapper: B {
+        public protocol SwiftJavaBWrapper: B {
           var _javaBInterface: JavaB { get }
         }
         """,
@@ -427,18 +429,18 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        protocol SwiftJavaParentProtocolWrapper: ParentProtocol {
+        public protocol SwiftJavaParentProtocolWrapper: ParentProtocol {
           var _javaParentProtocolInterface: JavaParentProtocol { get }
         }
         """,
         """
-        protocol SwiftJavaChildProtocolWrapper: ChildProtocol, SwiftJavaParentProtocolWrapper {
+        public protocol SwiftJavaChildProtocolWrapper: ChildProtocol, SwiftJavaParentProtocolWrapper {
           var _javaChildProtocolInterface: JavaChildProtocol { get }
         }
         """,
         """
         extension SwiftJavaChildProtocolWrapper {
-          var _javaParentProtocolInterface: JavaParentProtocol {
+          public var _javaParentProtocolInterface: JavaParentProtocol {
             _javaChildProtocolInterface
           }
           public func childMethod() {

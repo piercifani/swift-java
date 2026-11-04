@@ -34,7 +34,7 @@ extension JNISwift2JavaGenerator {
       }
 
       do {
-        let translator = JavaInterfaceProtocolWrapperGenerator()
+        let translator = JavaInterfaceProtocolWrapperGenerator(asyncFuncMode: config.effectiveAsyncFuncMode)
         wrappers[type] = try translator.generate(for: type)
       } catch {
         self.logger.warning("Failed to generate protocol wrapper for: '\(type.swiftNominal.qualifiedName)'; \(error)")
@@ -104,6 +104,8 @@ extension JNISwift2JavaGenerator {
   }
 
   struct JavaInterfaceProtocolWrapperGenerator {
+    var asyncFuncMode: JExtractAsyncFuncMode = .default
+
     func generate(for type: ExtractedNominalType) throws -> JavaInterfaceSwiftWrapper {
       if !type.initializers.isEmpty
         || type.methods.contains(where: \.isStatic)
@@ -139,6 +141,30 @@ extension JNISwift2JavaGenerator {
       )
     }
 
+    /// An `async` requirement implemented in Java returns a `CompletableFuture`, which the Swift
+    /// wrapper awaits; its value arrives as a plain Java object. Supported results: `Void`, types
+    /// translated directly (unboxed via `JavaBoxable`), and jextracted types.
+    private func validateAsyncRequirement(_ signature: SwiftFunctionSignature) throws {
+      guard asyncFuncMode == .completableFuture else {
+        // A `java.util.concurrent.Future` can't notify Swift when it completes.
+        throw JavaTranslationError.asyncRequirementNeedsCompletableFuture
+      }
+      let resultType = signature.result.type
+      if resultType.isVoid {
+        return
+      }
+      if case .nominal(let nominal) = resultType, let known = nominal.nominalTypeDecl.knownTypeKind {
+        if known.isDirectlyTranslatedToWrapJava && known != .uint16 {
+          return
+        }
+        throw JavaTranslationError.unsupportedSwiftType(resultType)
+      }
+      if case .nominal = resultType {
+        return
+      }
+      throw JavaTranslationError.unsupportedSwiftType(resultType)
+    }
+
     /// Generates a synthetic closure function translation.
     /// This treats the closure as if it were a protocol with a single `apply` method,
     /// allowing it to use the same conversion infrastructure for optionals, arrays, etc.
@@ -169,6 +195,10 @@ extension JNISwift2JavaGenerator {
     }
 
     private func translate(function: ExtractedFunc) throws -> JavaInterfaceSwiftWrapper.Function {
+      if function.functionSignature.isAsync {
+        try validateAsyncRequirement(function.functionSignature)
+      }
+
       let parameters = try function.functionSignature.parameters.map {
         try self.translateParameter($0)
       }

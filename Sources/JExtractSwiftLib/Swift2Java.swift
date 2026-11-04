@@ -139,7 +139,10 @@ public struct SwiftToJava {
         swiftOutputDirectory: outputSwiftDirectory,
         javaOutputDirectory: outputJavaDirectory,
         javaClassLookupTable: wrappedJavaClassesLookupTable,
-        moduleJavaPackages: moduleJavaPackages
+        moduleJavaPackages: moduleJavaPackages,
+        javaCallbackModules: Set(
+          dependencyConfigs.filter { $0.configuration.effectiveEnableJavaCallbacks }.compactMap(\.swiftModuleName)
+        )
       )
 
       try generator.generate()

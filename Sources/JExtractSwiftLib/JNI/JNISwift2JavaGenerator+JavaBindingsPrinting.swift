@@ -933,7 +933,8 @@ extension JNISwift2JavaGenerator {
       }
       generics.append((name, extends))
     }
-    .map { "\($0) extends \($1.compactMap(\.className).joined(separator: " & "))" }
+    // Fully qualified, so a protocol from another module (another Java package) resolves.
+    .map { "\($0) extends \($1.compactMap(\.fullyQualifiedClassName).joined(separator: " & "))" }
     .joined(separator: .comma)
 
     if !generics.isEmpty {
