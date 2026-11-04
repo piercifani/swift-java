@@ -27,8 +27,8 @@ struct JNISkippedDeclarationsTests {
       public var name: String
     }
     public func supported() -> Tag { fatalError() }
-    public func sparse() -> [Tag?] { [] }
-    public func nested() -> [[String: Int64]] { [] }
+    public func pairs() -> [(Int64, String)] { [] }
+    public func callbacks() -> [() -> Void] { [] }
     """
 
   private func generate(_ source: String, sink: SkippedDeclarationCollector? = nil) throws -> JNISwift2JavaGenerator {
@@ -56,9 +56,9 @@ struct JNISkippedDeclarationsTests {
   func translationFailuresAreRecordedOnce() throws {
     let generator = try generate(source)
     let skipped = generator.skippedDeclarations.sorted()
-    #expect(skipped.count == 2, "\(skipped)")
-    #expect(skipped[0].hasPrefix("nested()"))
-    #expect(skipped[1].hasPrefix("sparse()"))
+    try #require(skipped.count == 2, "\(skipped)")
+    #expect(skipped[0].hasPrefix("callbacks()"))
+    #expect(skipped[1].hasPrefix("pairs()"))
   }
 
   @Test
