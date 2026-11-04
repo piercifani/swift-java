@@ -402,6 +402,9 @@ extension JNISwift2JavaGenerator {
       }
       translated.parentName = boxParentName
 
+      // The `@JavaInterface` wrappers the thunk uses for escaping closure parameters.
+      printEscapingClosureSwiftFunctionHelperClasses(&printer, translated)
+
       printCDecl(&printer, translated) { printer in
         self.printFunctionDowncall(&printer, method)
       }
