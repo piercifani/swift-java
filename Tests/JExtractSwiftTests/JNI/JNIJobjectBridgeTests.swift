@@ -117,4 +117,29 @@ struct JNIJobjectBridgeTests {
       ]
     )
   }
+
+  /// A module extending another module's type uses that module's public bridge instead of declaring one.
+  @Test
+  func extensionOfDependencyTypeDoesNotRedeclareTheBridge() throws {
+    try assertOutput(
+      input: """
+        import DependencyLib
+
+        extension Leg {
+          public func label() -> String { "" }
+        }
+        """,
+      .jni,
+      .swift,
+      swiftModuleName: "PrimaryLib",
+      dependencySwiftSources: ["DependencyLib": "public struct Leg {}"],
+      moduleJavaPackages: ["DependencyLib": "com.example.dep"],
+      expectedChunks: [
+        "func Java_com_example_swift_Leg__00024label__J("
+      ],
+      notExpectedChunks: [
+        "struct _JNIBridge_Leg"
+      ]
+    )
+  }
 }
