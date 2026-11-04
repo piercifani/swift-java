@@ -764,6 +764,14 @@ extension JNISwift2JavaGenerator {
         }
       }
     }
+
+    // With a global automatic arena, also offer `getCase()` without an arena, like other members.
+    if requiresSwiftArena && config.effectiveMemoryManagementMode.requiresGlobalArena {
+      printer.println()
+      printer.printBraceBlock("public Case\(caseGenericClause) getCase()") { printer in
+        printer.print("return getCase(SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA);")
+      }
+    }
   }
 
   /// Fully qualifies package-less class types whose leading name is shadowed by one of `names`.
