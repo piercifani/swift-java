@@ -115,4 +115,17 @@ struct JNIAsyncClosureTests {
       notExpectedChunks: ["perform("]
     )
   }
+
+  /// `dynamicJavaMethodCall` takes `JavaValue`s: a `JavaOptional` argument is passed as an optional.
+  @Test
+  func optionalArgumentIsPassedAsAnOptional() throws {
+    try assertOutput(
+      input: "public func onSetIcon(_ set: @escaping (String?) async -> Void) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        "arguments: Optional(_0.map {"
+      ]
+    )
+  }
 }

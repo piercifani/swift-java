@@ -2027,7 +2027,14 @@ extension JNISwift2JavaGenerator {
           // unless the closure throws. wrap-java doesn't bind a generic `CompletableFuture<T>` result,
           // so `apply` is called dynamically.
           let tryKeyword = fn.isThrowing ? "try" : "try!"
-          let arguments = upcallArguments.isEmpty ? "" : "arguments: \(upcallArguments.joined(separator: .comma)), "
+          // An optional parameter crosses as a `JavaOptional`, which is a `JavaValue` only as an optional.
+          let dynamicArguments = zip(fn.parameters, upcallArguments).map { parameter, argument in
+            if case .nominal(let nominal) = parameter.type, case .optional = nominal.asKnownType {
+              return "Optional(\(argument))"
+            }
+            return argument
+          }
+          let arguments = dynamicArguments.isEmpty ? "" : "arguments: \(dynamicArguments.joined(separator: .comma)), "
           resultPrinter.print(
             "let returnedFuture$ = \(tryKeyword) \(callInterfaceVar).dynamicJavaMethodCall(methodName: \"\(syntheticFunction.methodName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
           )
