@@ -179,7 +179,7 @@ extension JNISwift2JavaGenerator {
     ) throws -> SyntheticEscapingClosureFunctionType {
       let parameterConversions = try functionType.parameters.enumerated().map { idx, param in
         try self.translateParameter(
-          parameterName: param.parameterName ?? "_\(idx)",
+          parameterName: (param.parameterName ?? "_\(idx)").javaSafeIdentifier,
           type: param.type
         )
       }

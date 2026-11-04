@@ -65,6 +65,12 @@ extension JNISwift2JavaGenerator {
   /// The Swift spelling of a closure parameter or result in the `@JavaInterface` wrapper.
   /// Jextracted types are passed as their Java class, through its JavaKit wrapper.
   private func wrapJavaTypeName(_ type: SwiftType, isResult: Bool) -> String {
+    if type.isSwiftError {
+      return isResult ? "Throwable!" : "Throwable?"
+    }
+    if !isResult, optionalWrapped(type)?.isSwiftError == true {
+      return "JavaOptional<Throwable>?"
+    }
     if let nominal = jextractedNominal(type) {
       return nominal.generatedJavaClassMacroName + (isResult ? "!" : "?")
     }
@@ -139,11 +145,15 @@ extension JNISwift2JavaGenerator {
 
   private func renderEscapingClosureApplySignature(_ type: SwiftFunctionType) -> String {
     let params = type.parameters.enumerated().map { idx, param -> String in
-      let name = param.parameterName ?? "_\(idx)"
+      let name = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
       return "_ \(name): \(wrapJavaTypeName(param.type, isResult: false))"
     }
     let paramList = "(\(params.joined(separator: .comma)))"
 
+    // Java returns a `CompletableFuture` for an async closure, which the closure awaits.
+    if type.isAsync {
+      return "\(paramList) -> JavaCompletableFuture!"
+    }
     if type.resultType.isVoid {
       return paramList
     } else {
