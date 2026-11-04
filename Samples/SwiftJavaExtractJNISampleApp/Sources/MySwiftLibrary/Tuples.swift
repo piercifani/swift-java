@@ -34,6 +34,10 @@ public func takePair(pair: (Int64, String)) -> String {
 public func labeledTuple() -> (x: Int32, y: Int32) {
   (x: 10, y: 20)
 }
+
+public func maybeLabeledTuple(present: Bool) -> (x: Int32, y: Int32)? {
+  present ? (x: 10, y: 20) : nil
+}
 // snippet.end
 
 public func echoSingleTuple(input: (String)) -> (String) {

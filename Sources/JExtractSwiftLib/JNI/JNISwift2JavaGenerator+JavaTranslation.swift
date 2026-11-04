@@ -1796,7 +1796,7 @@ extension JNISwift2JavaGenerator {
       }
 
       // Common indirect conversion
-      let javaType = try translateGenericTypeParameter(
+      var javaType = try translateGenericTypeParameter(
         swiftType,
         genericParameters: genericParameters,
         genericRequirements: genericRequirements,
@@ -1809,6 +1809,15 @@ extension JNISwift2JavaGenerator {
         genericParameters: genericParameters,
         genericRequirements: genericRequirements,
       )
+
+      // The optional wraps the value itself: an array of primitives is the `long[]` the native method
+      // returned, not `java.lang.Long[]`, and a labeled tuple is its generated `LabeledTuple_…` class,
+      // which is printed because the result type names it.
+      if case .array(let element) = wrappedValueResult.javaType, element.isPrimitive {
+        javaType = wrappedValueResult.javaType
+      } else if wrappedValueResult.javaType.isSwiftJavaLabeledTuple {
+        javaType = wrappedValueResult.javaType
+      }
 
       let returnType = JavaType.optional(javaType)
       return TranslatedResult(

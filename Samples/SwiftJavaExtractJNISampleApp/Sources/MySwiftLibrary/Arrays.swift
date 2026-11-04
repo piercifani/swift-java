@@ -94,3 +94,7 @@ public func setArray() -> [Set<String>] {
 public func nestedObjectArray(array: [[MySwiftClass]]) -> [[MySwiftClass]] {
   array
 }
+
+public func maybeLongArray(present: Bool) -> [Int64]? {
+  present ? [1, 2] : nil
+}
