@@ -228,4 +228,37 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  /// A `@MainActor` closure may run on another thread than the one that created it, like a `@Sendable` one.
+  @Test
+  func mainActorClosure_wrapsJavaObjectPerThread() throws {
+    try assertOutput(
+      input: "public func onTap(_ cb: @escaping @MainActor () -> Void) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        "nonisolated(unsafe) let javaInterface_cb$ = JavaSwiftModule_onTap_cb(javaThis: cb, environment: environment)",
+        "let javaInterface_cb$ = JavaSwiftModule_onTap_cb(javaThis: javaInterface_cb$.javaThis, environment: try! JavaVirtualMachine.shared().environment())",
+      ]
+    )
+  }
+
+  @Test
+  func mainActorClosureTypealiasFromDependency_wrapsJavaObjectPerThread() throws {
+    try assertOutput(
+      input: """
+        import DependencyLib
+
+        public func onLogin(_ didLogin: @escaping VoidCallback) {}
+        """,
+      .jni,
+      .swift,
+      swiftModuleName: "PrimaryLib",
+      dependencySwiftSources: ["DependencyLib": "public typealias VoidCallback = @MainActor () -> Void"],
+      moduleJavaPackages: ["DependencyLib": "com.example.dep"],
+      expectedChunks: [
+        "nonisolated(unsafe) let javaInterface_didLogin$ = JavaPrimaryLib_onLogin_didLogin(javaThis: didLogin, environment: environment)"
+      ]
+    )
+  }
 }

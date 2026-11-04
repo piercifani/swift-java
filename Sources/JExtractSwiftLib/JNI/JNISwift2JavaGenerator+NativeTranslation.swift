@@ -2059,8 +2059,12 @@ extension JNISwift2JavaGenerator {
           ? "{"
           : "{ \(closureParameters) in"
 
+        // A `@Sendable` or `@MainActor` closure may run on another thread than the one that created the
+        // wrapper: it captures the wrapper unsafely and wraps the Java object again with that thread's JNI
+        // environment.
+        let crossesThreads = fn.isSendable || fn.isMainActorIsolated
         let sendableRebind =
-          fn.isSendable
+          crossesThreads
           ? "let \(callInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(javaInterfaceVar).javaThis, environment: try! JavaVirtualMachine.shared().environment())\n"
           : ""
 
@@ -2077,7 +2081,7 @@ extension JNISwift2JavaGenerator {
             guard let \(placeholder) else {
               fatalError(\"\(placeholder) is null\")
             }
-            \(fn.isSendable ? "nonisolated(unsafe) " : "")let \(javaInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(placeholder), environment: environment)
+            \(crossesThreads ? "nonisolated(unsafe) " : "")let \(javaInterfaceVar) = \(syntheticFunction.javaInterfaceName)(javaThis: \(placeholder), environment: environment)
             return \(closureHeader)
               \(sendableRebind)\(argumentPrefix)\(resultPrefix)\(isVoid ? resultConverted : "return \(resultConverted)")
             }
