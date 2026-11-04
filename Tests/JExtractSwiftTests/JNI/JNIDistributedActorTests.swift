@@ -36,10 +36,10 @@ struct JNIDistributedActorTests {
         public java.util.concurrent.CompletableFuture<java.lang.Void> hi() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           D.$hi(this.$memoryAddress(), future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """

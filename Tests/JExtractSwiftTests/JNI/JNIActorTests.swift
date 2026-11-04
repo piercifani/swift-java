@@ -45,10 +45,10 @@ struct JNIActor1MethodsTests {
         public java.util.concurrent.CompletableFuture<java.lang.Void> hello() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           K.$hello(this.$memoryAddress(), future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -93,10 +93,10 @@ struct JNIActor1MethodsTests {
         public java.util.concurrent.CompletableFuture<java.lang.Void> hi() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           K.$hi(this.$memoryAddress(), future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """
@@ -237,10 +237,10 @@ struct JNIActor1MethodsTests {
         public java.util.concurrent.CompletableFuture<java.lang.Void> concurrentlyAsync() {
           java.util.concurrent.CompletableFuture<java.lang.Void> future$ = new java.util.concurrent.CompletableFuture<java.lang.Void>();
           K.$concurrentlyAsync(this.$memoryAddress(), future$);
-          return future$.thenApply((futureResult$) -> {
+          return org.swift.swiftkit.core.CompletableFutureCancellation.forwardCancellation(future$.thenApply((futureResult$) -> {
             return futureResult$;
           }
-          );
+          ), future$);
         }
         """,
         """

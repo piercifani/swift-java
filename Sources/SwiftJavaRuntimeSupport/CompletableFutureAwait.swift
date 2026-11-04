@@ -102,3 +102,58 @@ public func Java_org_swift_swiftkit_core_CompletableFutureContinuation__00024res
     )
   )
 }
+
+// ==== -----------------------------------------------------------------------
+// MARK: Cancelling the Swift task behind an exported `async` function
+
+@JavaClass("org.swift.swiftkit.core.CompletableFutureCancellation")
+class JavaCompletableFutureCancellation: JavaObject {}
+
+extension JavaClass<JavaCompletableFutureCancellation> {
+  @JavaStaticMethod
+  func cancelTaskWhenCancelled(_ future: JavaCompletableFuture?, _ task: Int64)
+}
+
+private final class SwiftTaskHandle: @unchecked Sendable {
+  let task: Task<Void, Never>
+
+  init(_ task: Task<Void, Never>) {
+    self.task = task
+  }
+}
+
+/// Cancels `task` when the Java `future` it completes is cancelled.
+///
+/// Used by generated code for `async` functions exported to Java. Pass the future the native call
+/// received, which stays valid for the duration of the call even if the task has already finished.
+public func _cancelTaskWhenFutureIsCancelled(
+  _ future: jobject?,
+  task: Task<Void, Never>,
+  environment: JNIEnvironment
+) {
+  guard let future else { return }
+  let handle = Unmanaged.passRetained(SwiftTaskHandle(task)).toOpaque()
+  let cancellationClass = try! JavaClass<JavaCompletableFutureCancellation>(environment: environment)
+  cancellationClass.cancelTaskWhenCancelled(
+    JavaCompletableFuture(javaThis: future, environment: environment),
+    Int64(Int(bitPattern: handle))
+  )
+}
+
+@_cdecl("Java_org_swift_swiftkit_core_CompletableFutureCancellation__00024cancelTask")
+public func Java_org_swift_swiftkit_core_CompletableFutureCancellation__00024cancelTask(
+  environment: UnsafeMutablePointer<JNIEnv?>!,
+  thisClass: jclass,
+  task: jlong
+) {
+  Unmanaged<SwiftTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).takeUnretainedValue().task.cancel()
+}
+
+@_cdecl("Java_org_swift_swiftkit_core_CompletableFutureCancellation__00024releaseTask")
+public func Java_org_swift_swiftkit_core_CompletableFutureCancellation__00024releaseTask(
+  environment: UnsafeMutablePointer<JNIEnv?>!,
+  thisClass: jclass,
+  task: jlong
+) {
+  Unmanaged<SwiftTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).release()
+}
