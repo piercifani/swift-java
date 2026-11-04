@@ -226,7 +226,7 @@ extension JNISwift2JavaGenerator {
       // Closures.
       var funcTypes: [TranslatedFunctionType] = []
       for (idx, param) in decl.functionSignature.parameters.enumerated() {
-        let parameterName = param.parameterName ?? "_\(idx)"
+        let parameterName = (param.parameterName ?? "_\(idx)").thunkSafeParameterName
 
         switch param.type {
         case .function(let funcTy):
@@ -387,7 +387,7 @@ extension JNISwift2JavaGenerator {
       genericRequirements: [SwiftGenericRequirement],
     ) throws -> [TranslatedParameter] {
       try parameters.enumerated().map { idx, param in
-        let parameterName = param.name ?? "arg\(idx)"
+        let parameterName = (param.name ?? "arg\(idx)").thunkSafeParameterName
         return try translateParameter(
           swiftType: param.type,
           parameterName: parameterName,
@@ -2281,5 +2281,18 @@ extension JNISwift2JavaGenerator {
     ) -> JavaTranslationError {
       .emptyTuple(file: _file, line: _line)
     }
+  }
+}
+
+extension String {
+  /// Names the generated Java methods and Swift thunks use for their own parameters and locals
+  /// (`environment`, `result$`, `swiftArena`…).
+  private static let thunkReservedNames: Set<String> = [
+    "environment", "thisClass", "result", "selfPointer", "selfTypePointer", "swiftArena",
+  ]
+
+  /// A Swift parameter's name as a Java and thunk parameter: a reserved one gets a `_` suffix.
+  fileprivate var thunkSafeParameterName: String {
+    Self.thunkReservedNames.contains(self) ? self + "_" : self
   }
 }
