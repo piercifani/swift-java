@@ -161,7 +161,7 @@ struct JNIDefaultArgumentsTests {
       input: """
         public struct Quantity {
           init(value: Int64 = 0) {}
-          public init(double: Double = 0) {}
+          public init(amount: Double = 0) {}
         }
 
         public struct Count {
@@ -171,7 +171,7 @@ struct JNIDefaultArgumentsTests {
       .jni,
       .swift,
       expectedChunks: [
-        "Quantity.init(double: Double(fromJNI: double, in: environment))",
+        "Quantity.init(amount: Double(fromJNI: amount, in: environment))",
         "Count.init()",
       ],
       notExpectedChunks: [
