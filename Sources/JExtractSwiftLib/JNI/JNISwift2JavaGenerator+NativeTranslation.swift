@@ -370,56 +370,72 @@ extension JNISwift2JavaGenerator {
       methodName: String,
       parentName: SwiftQualifiedTypeName
     ) throws -> NativeParameter {
-      if functionType.isEscaping {
-        // For escaping closures we e need to create a Swift wrapper around
-        // the passed down Java functional interface because we must keep it
-        // alive with a global ref, that will remain around for as long as the
-        // escaping closure is.
-        //
-        // Prepare the name and shapes of the Java side functional interface
-        // and Swift side @JavaInterface wrapper we'll use to implement that
-        // interface (and keep the Java object reachable).
-
-        // Name it: interface MyClass_myMethod_theClosure { ... }
-        let javaClosureInterfaceName = String.flatName(
-          prefix: "Java",
-          parent: parentName,
-          method: methodName,
-          parameter: parameterName,
-        )
-        let javaBinaryName = String.javaBinaryName(
-          package: self.javaPackage,
-          parent: parentName,
-          method: methodName,
-          qualifier: parameterName,
-        )
-        let generator = JavaInterfaceProtocolWrapperGenerator()
-        let syntheticFunction = try generator.generateSyntheticClosureFunction(
+      if !functionType.isEscaping {
+        // The legacy lowering handles primitive arguments and results only. Other closures go through
+        // the escaping one: its Swift closure can be passed where a non-escaping one is expected.
+        if let legacy = try? translateNonEscapingFunctionParameter(
           functionType: functionType,
-          javaInterfaceName: javaClosureInterfaceName,
-          javaBinaryName: javaBinaryName,
-        )
-
-        return NativeParameter(
-          parameters: [
-            JavaParameter(
-              name: parameterName,
-              type: .class(
-                package: javaPackage,
-                name: String.javaQualifiedName(parentName.fullName, methodName, parameterName)
-              )
-            )
-          ],
-          conversion: .escapingClosureLowering(
-            syntheticFunction: syntheticFunction
-          ),
-          indirectConversion: nil,
-          conversionCheck: nil,
-          syntheticClosure: syntheticFunction
-        )
+          parameterName: parameterName,
+          methodName: methodName,
+          parentName: parentName
+        ) {
+          return legacy
+        }
       }
+      // For escaping closures we e need to create a Swift wrapper around
+      // the passed down Java functional interface because we must keep it
+      // alive with a global ref, that will remain around for as long as the
+      // escaping closure is.
+      //
+      // Prepare the name and shapes of the Java side functional interface
+      // and Swift side @JavaInterface wrapper we'll use to implement that
+      // interface (and keep the Java object reachable).
 
-      // Non-escaping closures use the legacy translation
+      // Name it: interface MyClass_myMethod_theClosure { ... }
+      let javaClosureInterfaceName = String.flatName(
+        prefix: "Java",
+        parent: parentName,
+        method: methodName,
+        parameter: parameterName,
+      )
+      let javaBinaryName = String.javaBinaryName(
+        package: self.javaPackage,
+        parent: parentName,
+        method: methodName,
+        qualifier: parameterName,
+      )
+      let generator = JavaInterfaceProtocolWrapperGenerator()
+      let syntheticFunction = try generator.generateSyntheticClosureFunction(
+        functionType: functionType,
+        javaInterfaceName: javaClosureInterfaceName,
+        javaBinaryName: javaBinaryName,
+      )
+
+      return NativeParameter(
+        parameters: [
+          JavaParameter(
+            name: parameterName,
+            type: .class(
+              package: javaPackage,
+              name: String.javaQualifiedName(parentName.fullName, methodName, parameterName)
+            )
+          )
+        ],
+        conversion: .escapingClosureLowering(
+          syntheticFunction: syntheticFunction
+        ),
+        indirectConversion: nil,
+        conversionCheck: nil,
+        syntheticClosure: syntheticFunction
+      )
+    }
+
+    private func translateNonEscapingFunctionParameter(
+      functionType: SwiftFunctionType,
+      parameterName: String,
+      methodName: String,
+      parentName: SwiftQualifiedTypeName
+    ) throws -> NativeParameter {
       var parameters = [NativeParameter]()
       for (i, parameter) in functionType.parameters.enumerated() {
         let closureParamName = parameter.parameterName ?? "_\(i)"
@@ -1831,9 +1847,12 @@ extension JNISwift2JavaGenerator {
         // It will cause a new global ref on the javaThis, so no need for explicit global refs.
         // This object will be closed over by the closure we pass to Swift, and therefore keep alive the
         // Java side that we'll make an up-call into when the closure runs.
+        // For a non-escaping parameter, the literal would be inferred as non-escaping and couldn't be
+        // returned: spell out the closure type, which is escaping as a result.
+        let outerHeader = fn.isEscaping ? "{" : "{ () -> \(fn) in"
         printer.print(
           """
-          {
+          \(outerHeader)
             guard let \(placeholder) else {
               fatalError(\"\(placeholder) is null\")
             }

@@ -88,6 +88,52 @@ struct JNIEscapingClosureJExtractedTypesTests {
   }
 
   @Test
+  func nonEscapingStructClosure_usesTheEscapingLowering() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func transform(_ item: Item, _ f: (Item) -> Item) -> Item { f(item) }",
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        """
+        @JavaInterface("com.example.swift.SwiftModule$transform$f")
+        public struct JavaSwiftModule_transform_f {
+          @JavaMethod
+          public func apply(_ _0: JavaItem?) -> JavaItem!
+        }
+        """,
+        // Spelled out: inferred from the non-escaping parameter, the returned closure couldn't escape.
+        """
+        result$.initialize(to: SwiftModule.transform(item$.pointee, { () -> (Item) -> Item in
+        guard let f else {
+          fatalError("f is null")
+        }
+        let javaInterface_f$ = JavaSwiftModule_transform_f(javaThis: f, environment: environment)
+        return { _0 in
+        """,
+      ]
+    )
+  }
+
+  @Test
+  func nonEscapingStructClosure_javaInterface() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func transform(_ item: Item, _ f: (Item) -> Item) -> Item { f(item) }",
+      .jni,
+      .java,
+      detectChunkByInitialLines: 2,
+      expectedChunks: [
+        """
+        @FunctionalInterface
+        public interface f {
+          Item apply(Item _0);
+        }
+        """
+      ]
+    )
+  }
+
+  @Test
   func optionalStructParameter_isJavaOptional() throws {
     try assertOutput(
       input: itemSource + "\npublic func check(_ cb: @escaping (String, Item?) -> Bool) {}",
