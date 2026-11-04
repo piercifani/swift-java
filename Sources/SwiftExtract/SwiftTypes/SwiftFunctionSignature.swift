@@ -263,6 +263,7 @@ extension SwiftFunctionSignature {
       }
 
     self.isDistributed = node.modifiers.contains { $0.name.tokenKind == .keyword(.distributed) }
+    self.spellBareProtocolsAsExistentials()
   }
 
   public static func translateGenericParameters(
@@ -402,6 +403,7 @@ extension SwiftFunctionSignature {
     }
     self.genericParameters = []
     self.genericRequirements = []
+    self.spellBareProtocolsAsExistentials()
   }
 
   public init(
@@ -459,6 +461,15 @@ extension SwiftFunctionSignature {
     self.parameters = nodeParameters
     self.genericParameters = []
     self.genericRequirements = []
+    self.spellBareProtocolsAsExistentials()
+  }
+
+  /// A bare protocol in a parameter or result type is an existential (`any P`), not a concrete type.
+  private mutating func spellBareProtocolsAsExistentials() {
+    for index in parameters.indices {
+      parameters[index].type = parameters[index].type.existentialForBareProtocols
+    }
+    result.type = result.type.existentialForBareProtocols
   }
 
   struct AccessorEffects {
