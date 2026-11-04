@@ -2333,19 +2333,29 @@ extension JNISwift2JavaGenerator {
           """
         )
 
-        var selfCaptures: [(unsafeSendable: String, original: String)] = []
+        var pointerCaptures: [(unsafeSendable: String, original: String)] = []
         if let selfParameter = nativeFunctionSignature.selfParameter {
           if case .extractSwiftProtocolValue = selfParameter.conversion {
             for parameter in selfParameter.parameters {
-              selfCaptures.append(("\(parameter.name)ExistentialUnsafeSendable$", "\(parameter.name)Existential$"))
+              pointerCaptures.append(("\(parameter.name)ExistentialUnsafeSendable$", "\(parameter.name)Existential$"))
             }
           } else {
             for parameter in selfParameter.parameters {
-              selfCaptures.append(("\(parameter.name)UnsafeSendable$", "\(parameter.name)$"))
+              pointerCaptures.append(("\(parameter.name)UnsafeSendable$", "\(parameter.name)$"))
             }
           }
         }
-        for capture in selfCaptures {
+        // A jextracted argument is read through the pointer the thunk decoded (`item$`), which isn't
+        // `Sendable` either.
+        for parameter in nativeFunctionSignature.parameters {
+          guard case .pointee(.extractSwiftValue) = parameter.conversion else {
+            continue
+          }
+          for javaParameter in parameter.parameters {
+            pointerCaptures.append(("\(javaParameter.name)UnsafeSendable$", "\(javaParameter.name)$"))
+          }
+        }
+        for capture in pointerCaptures {
           printer.print("nonisolated(unsafe) let \(capture.unsafeSendable) = \(capture.original)")
         }
 
@@ -2394,7 +2404,7 @@ extension JNISwift2JavaGenerator {
         }
 
         func printTaskBody(printer: inout SwiftPrinter) {
-          for capture in selfCaptures {
+          for capture in pointerCaptures {
             printer.print("let \(capture.original) = \(capture.unsafeSendable)")
           }
           printer.printBraceBlock("defer") { printer in
