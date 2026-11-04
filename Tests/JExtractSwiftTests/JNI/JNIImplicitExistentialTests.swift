@@ -48,4 +48,16 @@ struct JNIImplicitExistentialTests {
       ]
     )
   }
+
+  @Test
+  func boxIsPublicForOtherModules_javaBindings() throws {
+    try assertOutput(
+      input: source,
+      .jni,
+      .java,
+      expectedChunks: [
+        "public final class ClientBox implements JNISwiftInstance, Client {"
+      ]
+    )
+  }
 }

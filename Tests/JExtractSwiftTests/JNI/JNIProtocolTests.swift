@@ -460,7 +460,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        final class GreeterBox implements JNISwiftInstance, Greeter {
+        public final class GreeterBox implements JNISwiftInstance, Greeter {
           ...
           public static GreeterBox wrapMemoryAddressUnsafe(long selfPointer, long selfTypePointer, SwiftArena swiftArena) {
             return new GreeterBox(selfPointer, selfTypePointer, swiftArena);
@@ -631,7 +631,7 @@ struct JNIProtocolTests {
         }
         """,
         """
-        final class LoaderBox implements JNISwiftInstance, Loader {
+        public final class LoaderBox implements JNISwiftInstance, Loader {
           ...
           public long load() {
             return LoaderBox.$load(this.$memoryAddress(), this.$typeMetadataAddress());
@@ -656,7 +656,7 @@ struct JNIProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         """
-        final class ChildProtocolBox implements JNISwiftInstance, ChildProtocol {
+        public final class ChildProtocolBox implements JNISwiftInstance, ChildProtocol {
           ...
           public void childMethod() {
             ChildProtocolBox.$childMethod(this.$memoryAddress(), this.$typeMetadataAddress());
