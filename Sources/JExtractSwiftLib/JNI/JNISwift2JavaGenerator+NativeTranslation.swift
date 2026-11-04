@@ -1967,10 +1967,13 @@ extension JNISwift2JavaGenerator {
             }
           }
         }
-        // A jextracted argument is read through the pointer the thunk decoded (`item$`), which isn't
-        // `Sendable` either.
+        // A jextracted argument, optional or not, is read through the pointer the thunk decoded (`item$`),
+        // which isn't `Sendable` either.
         for parameter in nativeFunctionSignature.parameters {
-          guard case .pointee(.extractSwiftValue) = parameter.conversion else {
+          switch parameter.conversion {
+          case .pointee(.extractSwiftValue), .pointee(.optionalChain(.extractSwiftValue)):
+            break
+          default:
             continue
           }
           for javaParameter in parameter.parameters {
