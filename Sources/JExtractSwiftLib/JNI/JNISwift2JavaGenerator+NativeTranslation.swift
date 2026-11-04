@@ -1460,6 +1460,10 @@ extension JNISwift2JavaGenerator {
 
     indirect case unwrapOptional(NativeSwiftConversionStep, name: String, fatalErrorMessage: String)
 
+    /// Attaches the `AsyncStream` returned by the call to the Java `SwiftAsyncStream` passed in as
+    /// `result_stream`, converting each element with `elementConversion` when it is delivered.
+    indirect case attachAsyncStream(elementConversion: NativeSwiftConversionStep, elementJavaType: JavaType)
+
     indirect case asyncCompleteFuture(
       swiftFunctionResultType: SwiftType,
       nativeFunctionSignature: NativeFunctionSignature,
@@ -1963,6 +1967,22 @@ extension JNISwift2JavaGenerator {
           """
         )
         return unwrappedName
+
+      case .attachAsyncStream(let elementConversion, let elementJavaType):
+        var elementPrinter = SwiftPrinter()
+        let converted = elementConversion.render(&elementPrinter, "element$")
+        let value =
+          elementJavaType.requiresBoxing
+          ? "SwiftJavaRuntimeSupport._JNIBoxedConversions.box(\(converted), in: environment)"
+          : converted
+        printer.print(
+          """
+          SwiftJavaRuntimeSupport._attachAsyncStream(\(placeholder), to: result_stream, environment: environment) { element$, environment in
+          \(elementPrinter.finalize())return \(value)
+          }
+          """
+        )
+        return ""
 
       case .asyncCompleteFuture(
         let swiftFunctionResultType,

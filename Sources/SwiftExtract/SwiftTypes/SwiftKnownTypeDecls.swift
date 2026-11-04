@@ -43,6 +43,7 @@ public enum SwiftKnownType: Equatable {
   case array(_ element: SwiftType)
   case dictionary(_ key: SwiftType, _ value: SwiftType)
   case set(_ element: SwiftType)
+  case asyncStream(_ element: SwiftType)
 
   // Foundation
   case foundationDataProtocol
@@ -102,6 +103,9 @@ public enum SwiftKnownType: Equatable {
     case .set:
       guard let arg = genericArguments?.first else { return nil }
       self = .set(arg)
+    case .asyncStream:
+      guard let arg = genericArguments?.first else { return nil }
+      self = .asyncStream(arg)
     case .foundationDataProtocol: self = .foundationDataProtocol
     case .essentialsDataProtocol: self = .essentialsDataProtocol
     case .foundationData: self = .foundationData
@@ -145,6 +149,7 @@ public enum SwiftKnownType: Equatable {
     case .array: .array
     case .dictionary: .dictionary
     case .set: .set
+    case .asyncStream: .asyncStream
     case .foundationDataProtocol: .foundationDataProtocol
     case .essentialsDataProtocol: .essentialsDataProtocol
     case .foundationData: .foundationData
@@ -189,6 +194,7 @@ public enum SwiftKnownTypeDeclKind: String, Hashable {
   case array = "Swift.Array"
   case dictionary = "Swift.Dictionary"
   case set = "Swift.Set"
+  case asyncStream = "Swift.AsyncStream"
 
   // Foundation
   case foundationDataProtocol = "Foundation.DataProtocol"
