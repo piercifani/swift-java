@@ -73,3 +73,7 @@ public func nestedStringArray(array: [[String]]) -> [[String]] {
 public func nestedLongArray(array: [[Int64]]) -> [[Int64]] {
   array
 }
+
+public func maybeLongArray(present: Bool) -> [Int64]? {
+  present ? [1, 2] : nil
+}

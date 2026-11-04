@@ -157,6 +157,12 @@ public class ArraysTest {
     }
 
     @Test
+    void optionalLongArray() {
+        assertArrayEquals(new long[] { 1, 2 }, MySwiftLibrary.maybeLongArray(true).orElseThrow());
+        assertTrue(MySwiftLibrary.maybeLongArray(false).isEmpty());
+    }
+
+    @Test
     void nestedStringArray() {
         String[][] input = new String[][] {
             { "hello", "world" },
