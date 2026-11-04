@@ -92,4 +92,22 @@ struct JNIEnumCaseNameShadowingTests {
       ]
     )
   }
+
+  @Test
+  func caseNamedLikeAnOptionalsWrappedType() throws {
+    try assertOutput(
+      input: """
+        public enum Message {
+          case string(String)
+          case closed(code: Int64, reason: String?)
+        }
+        """,
+      .jni,
+      .java,
+      expectedChunks: [
+        "record String(java.lang.String arg0) implements Case {}",
+        "record Closed(long code, Optional<java.lang.String> reason) implements Case {}",
+      ]
+    )
+  }
 }

@@ -884,6 +884,15 @@ extension JNISwift2JavaGenerator {
       let typeParameters = typeParameters.map {
         qualifyingShadowedTypes($0, shadowedBy: names, genericParameterNames: genericParameterNames)
       }
+      // `Optional<String>` and the like are spelled as a single name (see `JavaType.optionalType`):
+      // `case string(String)` shadows its `String`.
+      if package == nil, let open = name.firstIndex(of: "<"), name.hasSuffix(">") {
+        let outer = String(name[..<open])
+        let inner = String(name[name.index(after: open)..<name.index(before: name.endIndex)])
+        let qualifiedOuter = names.contains(outer) ? "java.util.\(outer)" : outer
+        let qualifiedInner = names.contains(inner) ? "java.lang.\(inner)" : inner
+        return .class(package: nil, name: "\(qualifiedOuter)<\(qualifiedInner)>", typeParameters: typeParameters)
+      }
       let leadingName = String(name.prefix { $0 != "." })
       let isShadowed = package == nil && names.contains(leadingName) && !genericParameterNames.contains(leadingName)
       return .class(package: isShadowed ? javaPackage : package, name: name, typeParameters: typeParameters)
