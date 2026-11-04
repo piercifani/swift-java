@@ -56,4 +56,45 @@ struct JNINameCollisionTests {
       ]
     )
   }
+
+  @Test
+  func accessorsWithTheSameJavaName_javaBindings() throws {
+    try assertOutput(
+      input: """
+        public struct EventState {
+          public let live: Bool
+          public var isLive: Bool { live }
+          public var title: String
+          public static var title: String { "" }
+        }
+        """,
+      .jni,
+      .java,
+      expectedChunks: [
+        "public boolean getLive() {",
+        "public boolean isLive() {",
+        "public java.lang.String getTitle() {",
+        "public static java.lang.String getTitle_() {",
+        "public void setTitle(java.lang.String newValue) {",
+      ]
+    )
+  }
+
+  @Test
+  func accessorsWithTheSameJavaName_swiftThunks() throws {
+    try assertOutput(
+      input: """
+        public struct EventState {
+          public let live: Bool
+          public var isLive: Bool { live }
+        }
+        """,
+      .jni,
+      .swift,
+      expectedChunks: [
+        "func Java_com_example_swift_EventState__00024getLive__J(",
+        "func Java_com_example_swift_EventState__00024isLive__J(",
+      ]
+    )
+  }
 }
