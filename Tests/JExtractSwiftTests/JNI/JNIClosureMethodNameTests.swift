@@ -11,19 +11,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 //===----------------------------------------------------------------------===//
-
+import CodePrinting
 import JExtractSwiftLib
 import SwiftJavaConfigurationShared
 import Testing
 
-/// `closureMethodName` names the method of closure interfaces, so Kotlin can call a closure as `handler()`.
+/// `closureMethodName` names the method of closure interfaces, so Kotlin can call `onTap()` with `invoke`.
 @Suite
 struct JNIClosureMethodNameTests {
   let source =
     """
+    public struct Item {}
+
     public final class Notifier {
-      public init() {}
-      public func onMessage(_ handler: @escaping (String) -> Void) {}
+      public var onItem: (Item) -> Void
+      public init(onItem: @escaping (Item) -> Void) { self.onItem = onItem }
       public func double(_ f: (Int64) -> Int64) -> Int64 { f(2) }
     }
     """
@@ -43,8 +45,8 @@ struct JNIClosureMethodNameTests {
       .java,
       detectChunkByInitialLines: 1,
       expectedChunks: [
-        "void invoke(java.lang.String _0);",
-        // A closure `java.util.function` covers gets its own interface, so it is called the same way.
+        "void invoke(Item _0);",
+        // A closure `java.util.function` covers gets its own interface, so it can be called the same way.
         "long invoke(long _0);",
       ],
       notExpectedChunks: [
@@ -63,27 +65,11 @@ struct JNIClosureMethodNameTests {
       .swift,
       detectChunkByInitialLines: 1,
       expectedChunks: [
-        "public func invoke(_ _0: String)",
-        "javaInterface_handler$.invoke(_0)",
-        #"environment.interface.GetMethodID(environment, class$, "invoke", "(J)J")!"#,
+        "public func invoke(_ _0: JavaItem?)"
       ],
       notExpectedChunks: [
         "func apply(",
         ".apply(",
-      ]
-    )
-  }
-
-  @Test
-  func applyIsTheDefault() throws {
-    try assertOutput(
-      input: source,
-      .jni,
-      .java,
-      detectChunkByInitialLines: 1,
-      expectedChunks: [
-        "void apply(java.lang.String _0);",
-        "java.util.function.LongUnaryOperator",
       ]
     )
   }

@@ -45,3 +45,8 @@ public func totalArea(_ shapes: [Shape]) -> Double {
 public func makeSquareShape(side: Double) -> Shape {
   Square(side: side)
 }
+
+/// Returns the same instance: Java gets a new wrapper, which must equal the original.
+public func sameShape(_ shape: Shape) -> Shape {
+  shape
+}

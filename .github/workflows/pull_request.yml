@@ -278,6 +278,7 @@ jobs:
           'SwiftAndJavaJarFFMSampleLib',
           'SwiftJavaExtractFFMSampleApp',
           'SwiftJavaExtractJNISampleApp',
+          'SwiftJavaExtractJNIKotlinSampleApp',
         ]
     container:
       image: ${{ (contains(matrix.swift_version, 'nightly') && 'swiftlang/swift') || 'swift' }}:${{ matrix.swift_version }}-${{ matrix.os_version }}
@@ -315,6 +316,7 @@ jobs:
           'SwiftAndJavaJarFFMSampleLib',
           'SwiftJavaExtractFFMSampleApp',
           'SwiftJavaExtractJNISampleApp',
+          'SwiftJavaExtractJNIKotlinSampleApp',
         ]
     steps:
       - uses: actions/checkout@v7

@@ -102,6 +102,18 @@ public enum SwiftType: Equatable {
     }
   }
 
+  /// Whether this is `Error` or `any Error`: a Swift error of any type.
+  public var isSwiftError: Bool {
+    switch self {
+    case .nominal(let nominal):
+      return nominal.nominalTypeDecl.knownTypeKind == .error
+    case .existential(let constraint):
+      return constraint.isSwiftError
+    default:
+      return false
+    }
+  }
+
   public var isBoolean: Bool {
     if case let .nominal(nominal) = self {
       return nominal.nominalTypeDecl.knownTypeKind == .bool
@@ -513,6 +525,13 @@ extension SwiftType {
       self = knownTypes.optionalSugar(try SwiftType(optionalType.wrappedType, lookupContext: lookupContext))
 
     case .tupleType(let tupleType):
+      // `(T)` is `T` in parentheses, not a tuple: `((Item) -> Void)?` is an optional closure.
+      if tupleType.elements.count == 1, let element = tupleType.elements.first, element.firstName == nil,
+        element.ellipsis == nil
+      {
+        self = try SwiftType(element.type, lookupContext: lookupContext)
+        return
+      }
       self = try .tuple(
         tupleType.elements.map { element in
           SwiftTupleElement(

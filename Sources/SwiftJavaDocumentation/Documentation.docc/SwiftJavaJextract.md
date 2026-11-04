@@ -91,8 +91,8 @@ declarations marked `@JavaExport`, and the members of a type or extension marked
 that isn't marked is still exported, with only its marked members, when one of its members is marked.
 An extension's members are exported only when the extended type is exported too.
 
-Declarations that aren't exported are never translated, so Swift-only API that has no Java
-mapping doesn't produce warnings or generated code.
+Declarations that aren't exported are never translated, so they can't produce skipped-declaration
+warnings or fail a build that uses `failOnSkippedDeclarations`.
 
 ## See Also
 

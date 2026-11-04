@@ -127,7 +127,7 @@ public func Java_org_swift_swiftkit_core_SwiftAsyncStream__00024subscribe(
   // The source is consumed: an AsyncStream has a single consumer.
   let source = Unmanaged<SwiftAsyncStreamSource>.fromOpaque(UnsafeRawPointer(bitPattern: Int(source))!).takeRetainedValue()
   let task = source.subscribe(environment.interface.NewGlobalRef(environment, delivery)!)
-  return Int64(Int(bitPattern: Unmanaged.passRetained(AsyncStreamTaskHandle(task)).toOpaque()))
+  return Int64(Int(bitPattern: Unmanaged.passRetained(SwiftTaskHandle(task)).toOpaque()))
 }
 
 @_cdecl("Java_org_swift_swiftkit_core_SwiftAsyncStream__00024cancelTask")
@@ -136,7 +136,7 @@ public func Java_org_swift_swiftkit_core_SwiftAsyncStream__00024cancelTask(
   thisClass: jclass,
   task: jlong
 ) {
-  Unmanaged<AsyncStreamTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).takeUnretainedValue().task.cancel()
+  Unmanaged<SwiftTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).takeUnretainedValue().task.cancel()
 }
 
 @_cdecl("Java_org_swift_swiftkit_core_SwiftAsyncStream__00024releaseTask")
@@ -145,14 +145,5 @@ public func Java_org_swift_swiftkit_core_SwiftAsyncStream__00024releaseTask(
   thisClass: jclass,
   task: jlong
 ) {
-  Unmanaged<AsyncStreamTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).release()
-}
-
-/// Keeps the task that delivers a stream's elements, behind the handle Java holds.
-private final class AsyncStreamTaskHandle: @unchecked Sendable {
-  let task: Task<Void, Never>
-
-  init(_ task: Task<Void, Never>) {
-    self.task = task
-  }
+  Unmanaged<SwiftTaskHandle>.fromOpaque(UnsafeRawPointer(bitPattern: Int(task))!).release()
 }

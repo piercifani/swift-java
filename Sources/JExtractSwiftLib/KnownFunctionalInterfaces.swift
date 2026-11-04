@@ -231,16 +231,9 @@ struct KnownJavaFunctionalInterface: Sendable {
     closureMethodName == "apply" ? find(functionType) : nil
   }
 
-  /// See ``find(_:closureMethodName:)``.
-  static func find(
-    _ functionType: JNISwift2JavaGenerator.TranslatedFunctionType,
-    closureMethodName: String
-  ) -> KnownJavaFunctionalInterface? {
-    closureMethodName == "apply" ? find(functionType) : nil
-  }
-
   static func find(_ functionType: SwiftFunctionType) -> KnownJavaFunctionalInterface? {
-    if functionType.isEscaping {
+    // An async closure's interface returns a `CompletableFuture`.
+    if functionType.isEscaping || functionType.isAsync {
       return nil
     }
 
@@ -368,7 +361,7 @@ struct KnownJavaFunctionalInterface: Sendable {
   }
 
   static func find(_ functionType: JNISwift2JavaGenerator.TranslatedFunctionType) -> KnownJavaFunctionalInterface? {
-    if functionType.isEscaping {
+    if functionType.isEscaping || functionType.swiftType.isAsync {
       return nil
     }
     return find(parameters: functionType.parameters, result: functionType.result)

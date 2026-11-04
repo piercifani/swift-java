@@ -15,6 +15,7 @@
 package com.example.swift;
 
 import org.junit.jupiter.api.Test;
+import org.swift.swiftkit.core.SwiftArena;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -180,6 +181,19 @@ public class ClosuresTest {
     @Test
     void intClosure() {
         assertEquals(10, MySwiftLibrary.applyIntClosure(x -> x * 2, 5));
+    }
+
+    @Test
+    void nonEscapingStructClosure() {
+        try (var arena = SwiftArena.ofConfined()) {
+            MySwiftStruct result = MySwiftLibrary.transformStruct(
+                MySwiftStruct.init(1, 2, arena),
+                value -> MySwiftStruct.init(value.getCapacity() * 10, value.getLen(), arena),
+                arena
+            );
+            assertEquals(10, result.getCapacity());
+            assertEquals(2, result.getLen());
+        }
     }
 
     @Test

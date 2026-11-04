@@ -32,6 +32,7 @@ struct JNICodegenFixesTests {
       expectedChunks: [
         """
         public static class apply {
+          private apply() {}
           /** Corresponds to the Swift closure parameter of type {@code (Int) -> Int}. */
           @FunctionalInterface
           public interface f {

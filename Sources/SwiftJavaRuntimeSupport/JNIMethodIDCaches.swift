@@ -241,6 +241,28 @@ extension _JNIMethodIDCache {
     }
   }
 
+  public enum SwiftError {
+    private static let memoryAddressMethod = Method(name: "$memoryAddress", signature: "()J")
+    private static let typeMetadataAddressMethod = Method(name: "$typeMetadataAddress", signature: "()J")
+
+    private static let cache = _JNIMethodIDCache(
+      className: "org/swift/swiftkit/core/SwiftError",
+      methods: [memoryAddressMethod, typeMetadataAddressMethod]
+    )
+
+    public static var `class`: jclass {
+      cache.javaClass
+    }
+
+    public static var memoryAddress: jmethodID {
+      cache.methods[memoryAddressMethod]!
+    }
+
+    public static var typeMetadataAddress: jmethodID {
+      cache.methods[typeMetadataAddressMethod]!
+    }
+  }
+
   public enum SwiftErrorException {
     private static let wrapMemoryAddressUnsafeMethod = Method(
       name: "wrapMemoryAddressUnsafe",

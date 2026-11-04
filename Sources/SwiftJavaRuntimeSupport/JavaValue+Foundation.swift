@@ -92,6 +92,28 @@ extension _JNIObjectJavaValue {
   }
 }
 
+/// Bridges a `_JNIObjectJavaValue` in a closure's boxed arguments and results.
+public enum JavaObjectValueBridge<T: _JNIObjectJavaValue>: JobjectBridge {
+  public typealias SwiftType = T
+
+  public static func toJavaObject(_ value: T, in environment: JNIEnvironment) -> jobject? {
+    value.getJNIValue(in: environment)
+  }
+
+  public static func fromJavaObject(_ obj: jobject?, in environment: JNIEnvironment) -> T {
+    T(fromJNI: obj, in: environment)
+  }
+
+  public static func withJNIClass<Result>(
+    in environment: JNIEnvironment,
+    _ body: (jclass) throws -> Result
+  ) throws -> Result {
+    let javaClass = environment.interface.FindClass(environment, T._jniClassName)!
+    defer { environment.interface.DeleteLocalRef(environment, javaClass) }
+    return try body(javaClass)
+  }
+}
+
 /// Reads a `java.lang.String` result and releases its local reference.
 private func takeString(_ string: jobject?, in environment: JNIEnvironment) -> String {
   defer { environment.interface.DeleteLocalRef(environment, string) }

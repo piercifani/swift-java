@@ -114,7 +114,7 @@ extension JavaClass<JavaCompletableFutureCancellation> {
   func cancelTaskWhenCancelled(_ future: JavaCompletableFuture?, _ task: Int64)
 }
 
-private final class SwiftTaskHandle: @unchecked Sendable {
+final class SwiftTaskHandle: @unchecked Sendable {
   let task: Task<Void, Never>
 
   init(_ task: Task<Void, Never>) {

@@ -42,6 +42,34 @@ extension JNIEnvironment {
     return makeSwiftErrorException(for: error)
   }
 
+  /// The Swift error for a Java `Throwable`, the reverse of ``makeJavaThrowable(for:)``:
+  ///
+  /// - A `SwiftError` (a `SwiftErrorException`, or a jextracted error type's exception) gives back a
+  ///   copy of the Swift error it holds.
+  /// - Any other `Throwable` is the error itself, as SwiftJava's `Throwable`.
+  public func makeSwiftError(for throwable: jthrowable) -> any Error {
+    if interface.IsInstanceOf(self, throwable, _JNIMethodIDCache.SwiftError.class) == JNI_TRUE {
+      let address = interface.CallLongMethodA(self, throwable, _JNIMethodIDCache.SwiftError.memoryAddress, nil)
+      let metadata = interface.CallLongMethodA(self, throwable, _JNIMethodIDCache.SwiftError.typeMetadataAddress, nil)
+      if let pointer = UnsafeRawPointer(bitPattern: Int(address)),
+        let metadataPointer = UnsafeRawPointer(bitPattern: Int(metadata))
+      {
+        func load<T>(_: T.Type) -> Any { pointer.load(as: T.self) }
+        let type = unsafeBitCast(metadataPointer, to: Any.Type.self)
+        if let error = _openExistential(type, do: load) as? any Error {
+          return error
+        }
+      }
+    }
+    return Throwable(javaThis: throwable, environment: self)
+  }
+
+  /// A new local reference to the Java `Throwable` for `error`, to return from a native method: the one
+  /// ``makeJavaThrowable(for:)`` gives for a Java `Throwable` is owned by its Swift wrapper.
+  public func makeJavaThrowableLocalRef(for error: any Error) -> jthrowable? {
+    interface.NewLocalRef(self, makeJavaThrowable(for: error))
+  }
+
   /// Throw the given Swift error as a Java exception.
   public func throwSwiftErrorAsJava(_ error: any Error) {
     guard let throwable = makeJavaThrowable(for: error) else {
@@ -66,5 +94,34 @@ extension JNIEnvironment {
       _JNIMethodIDCache.SwiftErrorException.wrapMemoryAddressUnsafe,
       &args
     )
+  }
+}
+
+/// A Swift error as SwiftJava's `Throwable`, to pass to a Java method, such as a closure implemented in Java.
+public func _makeThrowable(for error: any Error) -> Throwable {
+  let environment = try! JavaVirtualMachine.shared().environment()
+  return Throwable(javaThis: environment.makeJavaThrowable(for: error)!, environment: environment)
+}
+
+/// Bridges a Swift error to and from a Java `Throwable`, such as for a closure's arguments and result.
+public enum ErrorBridge: JobjectBridge {
+  public typealias SwiftType = any Error
+
+  public static func toJavaObject(_ value: any Error, in environment: JNIEnvironment) -> jobject? {
+    environment.makeJavaThrowableLocalRef(for: value)
+  }
+
+  public static func fromJavaObject(_ obj: jobject?, in environment: JNIEnvironment) -> any Error {
+    guard let obj else {
+      fatalError("ErrorBridge.fromJavaObject received a null Java object")
+    }
+    return environment.makeSwiftError(for: obj)
+  }
+
+  public static func withJNIClass<Result>(
+    in environment: JNIEnvironment,
+    _ body: (jclass) throws -> Result
+  ) throws -> Result {
+    try body(try JavaClass<Throwable>(environment: environment).javaThis)
   }
 }

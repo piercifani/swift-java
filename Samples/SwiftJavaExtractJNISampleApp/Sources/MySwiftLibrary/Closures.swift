@@ -123,6 +123,11 @@ public func applyIntClosure(_ f: (Int) -> Int, to x: Int) -> Int {
   f(x)
 }
 
+/// A non-escaping closure taking and returning a struct.
+public func transformStruct(_ value: MySwiftStruct, _ f: (MySwiftStruct) -> MySwiftStruct) -> MySwiftStruct {
+  f(value)
+}
+
 public enum ClosureConstants {
   /// No type annotation: inferred as `Int` from the literal.
   public static let answer = 42

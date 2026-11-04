@@ -34,6 +34,8 @@ extension JNISwift2JavaGenerator {
       }
 
       do {
+        // wrap-java maps `java.net.URI` and the other Foundation Java types on its own terms, so
+        // protocols implemented in Java don't pass Foundation values as they are; closures do.
         let translator = JavaInterfaceProtocolWrapperGenerator(asyncFuncMode: config.effectiveAsyncFuncMode)
         wrappers[type] = try translator.generate(for: type)
       } catch {
@@ -108,6 +110,13 @@ extension JNISwift2JavaGenerator {
 
   struct JavaInterfaceProtocolWrapperGenerator {
     var asyncFuncMode: JExtractAsyncFuncMode = .default
+    /// Foundation values are `JavaValue`s that cross as Java types, as `String` does. Only for closures, whose
+    /// `@JavaInterface` jextract prints itself.
+    var foundationTypesAsJavaTypes: Bool = false
+
+    private func crossesAsIs(_ type: SwiftType) -> Bool {
+      type.isDirectlyTranslatedToWrapJava || (foundationTypesAsJavaTypes && type.isFoundationJavaValue)
+    }
 
     func generate(for type: ExtractedNominalType) throws -> JavaInterfaceSwiftWrapper {
       if !type.initializers.isEmpty
@@ -148,11 +157,15 @@ extension JNISwift2JavaGenerator {
     /// wrapper awaits; its value arrives as a plain Java object. Supported results: `Void`, types
     /// translated directly (unboxed via `JavaBoxable`), and jextracted types.
     private func validateAsyncRequirement(_ signature: SwiftFunctionSignature) throws {
+      try validateAsyncResult(signature.result.type)
+    }
+
+    /// An async requirement or closure implemented in Java returns a `CompletableFuture`: see `validateAsyncRequirement`.
+    private func validateAsyncResult(_ resultType: SwiftType) throws {
       guard asyncFuncMode == .completableFuture else {
         // A `java.util.concurrent.Future` can't notify Swift when it completes.
         throw JavaTranslationError.asyncRequirementNeedsCompletableFuture
       }
-      let resultType = signature.result.type
       if resultType.isVoid {
         return
       }
@@ -169,7 +182,7 @@ extension JNISwift2JavaGenerator {
     }
 
     /// Generates a synthetic closure function translation.
-    /// This treats the closure as if it were a protocol with a single method named `methodName`,
+    /// This treats the closure as if it were a protocol with a single `apply` method,
     /// allowing it to use the same conversion infrastructure for optionals, arrays, etc.
     func generateSyntheticClosureFunction(
       functionType: SwiftFunctionType,
@@ -177,6 +190,9 @@ extension JNISwift2JavaGenerator {
       javaBinaryName: String,
       methodName: String,
     ) throws -> SyntheticEscapingClosureFunctionType {
+      if functionType.isAsync {
+        try validateAsyncResult(functionType.resultType)
+      }
       let parameterConversions = try functionType.parameters.enumerated().map { idx, param in
         try self.translateParameter(
           parameterName: (param.parameterName ?? "_\(idx)").javaSafeIdentifier,
@@ -236,8 +252,11 @@ extension JNISwift2JavaGenerator {
 
     private func translateParameter(parameterName: String, type: SwiftType) throws -> UpcallConversionStep {
 
-      if type.isDirectlyTranslatedToWrapJava {
+      if crossesAsIs(type) {
         return .placeholder
+      }
+      if type.isSwiftError {
+        return .toJavaThrowable(.placeholder)
       }
 
       switch type {
@@ -317,7 +336,7 @@ extension JNISwift2JavaGenerator {
       methodName: String,
       allowNilForObjects: Bool = false
     ) throws -> UpcallConversionStep {
-      if type.isDirectlyTranslatedToWrapJava {
+      if crossesAsIs(type) {
         return .placeholder
       }
 
@@ -423,6 +442,9 @@ enum UpcallConversionStep {
 
   indirect case toJavaOptional(UpcallConversionStep)
 
+  /// A Swift error as SwiftJava's `Throwable`.
+  indirect case toJavaThrowable(UpcallConversionStep)
+
   indirect case fromJavaOptional(UpcallConversionStep)
 
   indirect case map(UpcallConversionStep, body: UpcallConversionStep)
@@ -478,6 +500,10 @@ enum UpcallConversionStep {
       let inner = inner.render(&printer, placeholder)
       return "\(inner).toJavaOptional()"
 
+    case .toJavaThrowable(let inner):
+      let inner = inner.render(&printer, placeholder)
+      return "_makeThrowable(for: \(inner))"
+
     case .fromJavaOptional(let inner):
       let inner = inner.render(&printer, placeholder)
       return "Optional(javaOptional: \(inner))"
@@ -495,6 +521,20 @@ enum UpcallConversionStep {
 }
 
 extension SwiftType {
+  /// A Foundation value that conforms to `JavaValue` in SwiftJavaRuntimeSupport, used with `foundationTypesAsJavaTypes`
+  var isFoundationJavaValue: Bool {
+    guard case .nominal(let nominal) = self, let kind = nominal.nominalTypeDecl.knownTypeKind else {
+      return false
+    }
+    switch kind {
+    case .foundationURL, .essentialsURL, .foundationDate, .essentialsDate, .foundationData, .essentialsData,
+      .foundationLocale, .essentialsLocale, .foundationTimeZone, .essentialsTimeZone:
+      return true
+    default:
+      return false
+    }
+  }
+
   /// Indicates whether this type is translated by `wrap-java`
   /// into the same type as `jextract`.
   ///

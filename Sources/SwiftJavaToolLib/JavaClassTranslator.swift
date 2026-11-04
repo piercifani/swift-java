@@ -1174,8 +1174,10 @@ extension JavaClassTranslator {
       }
 
       let resultOptional: String = resultType.optionalWrappedType() ?? resultType
+      // `self.`: a nested type of the same name, such as jextract's helper class for the method's closure
+      // types, would make the bare call ambiguous.
       let baseBody: ExprSyntax =
-        "\(raw: javaMethod.throwsCheckedException ? "try " : "")\(raw: swiftMethodName)(\(raw: parameters.map(\.passedArg).joined(separator: ", ")))"
+        "\(raw: javaMethod.throwsCheckedException ? "try " : "")self.\(raw: swiftMethodName)(\(raw: parameters.map(\.passedArg).joined(separator: ", ")))"
       let body: ExprSyntax =
         if resultType.optionalWrappedType() != nil {
           "Optional(javaOptional: \(baseBody))"

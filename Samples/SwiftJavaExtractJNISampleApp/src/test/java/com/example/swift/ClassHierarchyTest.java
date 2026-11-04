@@ -39,4 +39,16 @@ public class ClassHierarchyTest {
             assertEquals(16, shape.area());
         }
     }
+
+    @Test
+    void wrappersOfTheSameInstanceAreEqual() {
+        try (var arena = SwiftArena.ofConfined()) {
+            Square square = Square.init(2, arena);
+            Shape same = MySwiftLibrary.sameShape(square, arena);
+            assertNotSame(square, same);
+            assertEquals(square, same);
+            assertEquals(square.hashCode(), same.hashCode());
+            assertNotEquals(square, Square.init(2, arena));
+        }
+    }
 }
