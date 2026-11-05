@@ -147,11 +147,14 @@ struct JExtractSwiftBuildToolPlugin: SwiftJavaPluginProtocol, BuildToolPlugin {
 
     // If the developer has enabled java callbacks in the configuration (default is false)
     // and we are running in JNI mode, we will run additional phases in this build plugin
-    // to generate Swift wrappers using wrap-java that can be used to callback to Java.
+    // to generate Swift wrappers using wrap-java that can be used to callback to Java,
+    // unless jextract prints them (`javaCallbacksBindings: jextract`).
     let shouldRunJavaCallbacksPhases =
       if let configuration,
         configuration.enableJavaCallbacks == true,
-        configuration.effectiveMode == .jni
+        configuration.effectiveMode == .jni,
+        // jextract prints the bindings itself
+        configuration.effectiveJavaCallbacksBindings == .wrapJava
       {
         true
       } else {

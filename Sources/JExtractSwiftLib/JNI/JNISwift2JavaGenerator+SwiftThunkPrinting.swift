@@ -185,10 +185,30 @@ extension JNISwift2JavaGenerator {
     let inheritedWrappers = self.inheritedProtocols(of: translatedWrapper.importedType).compactMap { self.interfaceProtocolWrappers[$0] }
     let inheritedTypes = [translatedWrapper.swiftName] + inheritedWrappers.map(\.wrapperName)
 
+    if !usesWrapJavaBindings {
+      printJavaInterfaceBinding(&printer, translatedWrapper)
+    }
+
     // Public, so modules that take this protocol as a parameter can wrap Java implementations of it.
     printer.printBraceBlock("public protocol \(translatedWrapper.wrapperName): \(inheritedTypes.joined(separator: .comma))") { printer in
       printer.print(
         "var \(translatedWrapper.javaInterfaceVariableName): \(translatedWrapper.javaInterfaceName) { get }"
+      )
+    }
+    printer.println()
+
+    // A Java implementation as a Swift value, for a closure implemented in Java that returns one.
+    printer.printBraceBlock(
+      "final class \(translatedWrapper.importedType.swiftNominal.javaInterfaceSwiftImplementationName): \(translatedWrapper.wrapperName), @unchecked Sendable"
+    ) { printer in
+      printer.print(
+        """
+        let \(translatedWrapper.javaInterfaceVariableName): \(translatedWrapper.javaInterfaceName)
+
+        init(\(translatedWrapper.javaInterfaceVariableName): \(translatedWrapper.javaInterfaceName)) {
+          self.\(translatedWrapper.javaInterfaceVariableName) = \(translatedWrapper.javaInterfaceVariableName)
+        }
+        """
       )
     }
     printer.println()
@@ -1435,6 +1455,11 @@ extension SwiftNominalTypeDeclaration {
 
   var javaInterfaceSwiftProtocolWrapperName: String {
     "SwiftJava\(safeProtocolName)Wrapper"
+  }
+
+  /// The Swift class that wraps a Java implementation of this protocol.
+  var javaInterfaceSwiftImplementationName: String {
+    "SwiftJava\(safeProtocolName)Implementation"
   }
 
   var javaInterfaceVariableName: String {
