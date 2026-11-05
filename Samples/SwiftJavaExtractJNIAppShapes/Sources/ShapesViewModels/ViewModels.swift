@@ -20,9 +20,10 @@ import ShapesModels
 import ShapesUtil
 import SwiftJavaAnnotations
 
-/// Shape: a main-actor view model whose callbacks Kotlin implements.
+/// Shape: a main-actor `@Observable` view model whose callbacks Kotlin implements.
 @JavaExport
 @MainActor
+@Observable
 public final class LoginViewModel {
   /// Shape: callbacks typed with another module's `@MainActor` typealias, with defaults.
   @JavaExport
@@ -38,7 +39,7 @@ public final class LoginViewModel {
     }
   }
 
-  private let callbacks: Callbacks
+  @ObservationIgnored private let callbacks: Callbacks
   public private(set) var email = ""
 
   public init(callbacks: Callbacks) {
@@ -51,7 +52,7 @@ public final class LoginViewModel {
   }
 }
 
-/// Shape: an `@Observable` main-actor view model with async loading and many kinds of callbacks.
+/// Shape: a main-actor `@Observable` view model with async loading and many kinds of callbacks.
 @JavaExport
 @MainActor
 @Observable

@@ -29,7 +29,8 @@ func module(_ name: String, dependencies: [Target.Dependency] = []) -> Target {
 let package = Package(
   name: "SwiftJavaExtractJNIAppShapes",
   platforms: [
-    .macOS(.v15)
+    .iOS(.v18),
+    .macOS(.v15),
   ],
   products: [
     // One library with every module, as an app ships them: a library per module would link copies of
