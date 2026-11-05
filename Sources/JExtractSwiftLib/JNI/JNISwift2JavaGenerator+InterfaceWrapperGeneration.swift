@@ -224,7 +224,7 @@ extension JNISwift2JavaGenerator {
 
     /// A Swift closure passed to a closure implemented in Java, which keeps it to call later: a `SwiftClosure`
     /// Java wraps in the interface `interface` declares for it. Supported: escaping, synchronous closures
-    /// returning nothing, taking strings, numbers and jextracted types.
+    /// returning nothing, taking strings, numbers and jextracted types, optional or not.
     private func translateSwiftClosureArgument(
       name: String,
       closure: SwiftFunctionType,
@@ -233,9 +233,13 @@ extension JNISwift2JavaGenerator {
       guard closure.isEscaping, !closure.isAsync, closure.resultType.isVoid else {
         throw JavaTranslationError.unsupportedSwiftType(.function(closure))
       }
-      let argumentConversions = try closure.parameters.map { parameter -> String in
-        guard case .nominal(let nominal) = parameter.type else {
-          throw JavaTranslationError.unsupportedSwiftType(parameter.type)
+      func argumentConversion(_ type: SwiftType) throws -> String {
+        guard case .nominal(let nominal) = type else {
+          throw JavaTranslationError.unsupportedSwiftType(type)
+        }
+        if case .optional(let wrapped) = nominal.asKnownType {
+          // `nil` when Java passes `null`.
+          return "(%ARG% == nil ? nil : \(try argumentConversion(wrapped)))"
         }
         switch nominal.nominalTypeDecl.knownTypeKind {
         case .string, .int64, .int32, .double, .bool:
@@ -243,9 +247,10 @@ extension JNISwift2JavaGenerator {
         case nil where !nominal.isSwiftJavaWrapper:
           return "UnsafeMutablePointer<\(nominal.nominalTypeDecl.qualifiedName)>(bitPattern: Int(JavaJNISwiftInstance(javaThis: %ARG%!, environment: environment)._memoryAddress()))!.pointee"
         default:
-          throw JavaTranslationError.unsupportedSwiftType(parameter.type)
+          throw JavaTranslationError.unsupportedSwiftType(type)
         }
       }
+      let argumentConversions = try closure.parameters.map { try argumentConversion($0.type) }
       return .swiftClosureToJava(
         .placeholder,
         name: name,
