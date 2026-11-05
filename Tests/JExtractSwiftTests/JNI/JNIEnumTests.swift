@@ -416,7 +416,7 @@ extension JNIEnumTests {
           return java.util.Optional.of(new Case.Custom());
         }
         """,
-        "public static Policy custom(java.util.function.LongPredicate arg0, SwiftArena swiftArena) {",
+        "public static Policy custom(com.example.swift.Policy.custom.arg0 arg0, SwiftArena swiftArena) {",
         "public boolean allows(long value) {",
       ]
     )
@@ -430,6 +430,8 @@ extension JNIEnumTests {
       .swift,
       expectedChunks: [
         "Java_com_example_swift_Policy__00024custom__",
+        // The enum stores the closure: it holds the Java object, not the call's local reference.
+        "let javaInterface_arg0$ = JavaPolicy_custom_arg0(javaThis: arg0, environment: environment)",
         "Java_com_example_swift_Policy__00024allows__JJ",
       ],
       notExpectedChunks: [
