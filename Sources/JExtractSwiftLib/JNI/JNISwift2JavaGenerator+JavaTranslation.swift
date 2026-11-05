@@ -493,9 +493,21 @@ extension JNISwift2JavaGenerator {
       parentName: SwiftQualifiedTypeName,
     ) throws -> TranslatedFunctionType {
       var translatedParams: [TranslatedParameter] = []
+      var nestedFunctionTypes: [TranslatedFunctionType] = []
 
       for (i, param) in swiftType.parameters.enumerated() {
         let paramName = (param.parameterName ?? "_\(i)").javaSafeIdentifier
+        // A Swift closure Java gets to call later: an interface nested in this one, `<name>.<paramName>`.
+        if case .function(let nested) = param.type {
+          nestedFunctionTypes.append(try translateFunctionType(name: paramName, swiftType: nested, parentName: parentName))
+          translatedParams.append(
+            TranslatedParameter(
+              parameter: JavaParameter(name: paramName, type: .class(package: nil, name: "\(name).\(paramName)")),
+              conversion: .placeholder
+            )
+          )
+          continue
+        }
         var translatedParam = try translateParameter(
           swiftType: param.type,
           parameterName: paramName,
@@ -518,12 +530,14 @@ extension JNISwift2JavaGenerator {
         translatedResult.javaType = .completableFuture(translatedResult.javaType)
       }
 
-      return TranslatedFunctionType(
+      var translated = TranslatedFunctionType(
         name: name,
         parameters: translatedParams,
         result: translatedResult,
         swiftType: swiftType,
       )
+      translated.nestedFunctionTypes = nestedFunctionTypes
+      return translated
     }
 
     func translate(
@@ -2450,6 +2464,9 @@ extension JNISwift2JavaGenerator {
     /// retain/wrap it, that will be then called into from the escaping Swift-side
     /// closure we forward to the downcall target.
     var syntheticClosureType: SyntheticEscapingClosureFunctionType?
+
+    /// The closures this one takes, which Swift passes to Java: interfaces nested in this one's.
+    var nestedFunctionTypes: [TranslatedFunctionType] = []
   }
 
   /// Describes how to convert values between Java types and the native Java function

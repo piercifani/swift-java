@@ -243,13 +243,32 @@ extension JNISwift2JavaGenerator {
     guard printedEscapingClosureWrappers.insert(closureTy.javaInterfaceName).inserted else {
       return
     }
+    // The Swift closures it takes, which Java calls through interfaces nested in its own.
+    for (idx, param) in closureTy.functionType.parameters.enumerated() {
+      guard case .function = param.type else {
+        continue
+      }
+      let name = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
+      printer.print(
+        """
+        @JavaInterface("\(closureTy.javaBinaryName)$\(name)")
+        public struct \(closureTy.javaInterfaceName)_\(name) {}
+
+        extension JavaClass<\(closureTy.javaInterfaceName)> {
+          @JavaStaticMethod("$\(name)FromSwiftClosure")
+          public func _\(name)FromSwiftClosure(_ handle: Int64) -> \(closureTy.javaInterfaceName)_\(name)!
+        }
+
+        """
+      )
+    }
     printer.printBraceBlock(
       """
       @JavaInterface("\(closureTy.javaBinaryName)")
       public struct \(closureTy.javaInterfaceName)
       """
     ) { p in
-      let signature = self.renderEscapingClosureApplySignature(closureTy.functionType)
+      let signature = self.renderEscapingClosureApplySignature(closureTy.functionType, interface: closureTy.javaInterfaceName)
       p.print(
         """
         @JavaMethod
@@ -260,9 +279,12 @@ extension JNISwift2JavaGenerator {
     printer.println()
   }
 
-  private func renderEscapingClosureApplySignature(_ type: SwiftFunctionType) -> String {
+  private func renderEscapingClosureApplySignature(_ type: SwiftFunctionType, interface: String) -> String {
     let params = type.parameters.enumerated().map { idx, param -> String in
       let name = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
+      if case .function = param.type {
+        return "_ \(name): \(interface)_\(name)?"
+      }
       return "_ \(name): \(wrapJavaTypeName(param.type, isResult: false))"
     }
     let paramList = "(\(params.joined(separator: .comma)))"

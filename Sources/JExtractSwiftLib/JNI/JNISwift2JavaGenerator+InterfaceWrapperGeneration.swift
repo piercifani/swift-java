@@ -200,10 +200,11 @@ extension JNISwift2JavaGenerator {
         try validateAsyncResult(functionType.resultType)
       }
       let parameterConversions = try functionType.parameters.enumerated().map { idx, param in
-        try self.translateParameter(
-          parameterName: (param.parameterName ?? "_\(idx)").javaSafeIdentifier,
-          type: param.type
-        )
+        let name = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
+        if case .function(let closure) = param.type {
+          return try self.translateSwiftClosureArgument(name: name, closure: closure, interface: javaInterfaceName)
+        }
+        return try self.translateParameter(parameterName: name, type: param.type)
       }
 
       let resultConversion = try self.translateResult(
@@ -218,6 +219,39 @@ extension JNISwift2JavaGenerator {
         resultConversion: resultConversion,
         methodName: methodName,
         functionType: functionType
+      )
+    }
+
+    /// A Swift closure passed to a closure implemented in Java, which keeps it to call later: a `SwiftClosure`
+    /// Java wraps in the interface `interface` declares for it. Supported: escaping, synchronous closures
+    /// returning nothing, taking strings, numbers and jextracted types.
+    private func translateSwiftClosureArgument(
+      name: String,
+      closure: SwiftFunctionType,
+      interface: String
+    ) throws -> UpcallConversionStep {
+      guard closure.isEscaping, !closure.isAsync, closure.resultType.isVoid else {
+        throw JavaTranslationError.unsupportedSwiftType(.function(closure))
+      }
+      let argumentConversions = try closure.parameters.map { parameter -> String in
+        guard case .nominal(let nominal) = parameter.type else {
+          throw JavaTranslationError.unsupportedSwiftType(parameter.type)
+        }
+        switch nominal.nominalTypeDecl.knownTypeKind {
+        case .string, .int64, .int32, .double, .bool:
+          return "\(nominal.nominalTypeDecl.qualifiedName).fromJavaObject(%ARG%, in: environment)"
+        case nil where !nominal.isSwiftJavaWrapper:
+          return "UnsafeMutablePointer<\(nominal.nominalTypeDecl.qualifiedName)>(bitPattern: Int(JavaJNISwiftInstance(javaThis: %ARG%!, environment: environment)._memoryAddress()))!.pointee"
+        default:
+          throw JavaTranslationError.unsupportedSwiftType(parameter.type)
+        }
+      }
+      return .swiftClosureToJava(
+        .placeholder,
+        name: name,
+        interfaceStruct: interface,
+        argumentConversions: argumentConversions,
+        isMainActor: closure.isMainActorIsolated
       )
     }
 
@@ -493,6 +527,16 @@ enum UpcallConversionStep {
 
   indirect case map(UpcallConversionStep, body: UpcallConversionStep)
 
+  /// A Swift closure as the Java object the interface `interfaceStruct` makes of its `SwiftClosure`.
+  /// `argumentConversions` turn each Java argument, `%ARG%`, into the closure's.
+  indirect case swiftClosureToJava(
+    UpcallConversionStep,
+    name: String,
+    interfaceStruct: String,
+    argumentConversions: [String],
+    isMainActor: Bool
+  )
+
   indirect case flatMap(UpcallConversionStep, body: UpcallConversionStep)
 
   /// A string or number as its boxed Java object, such as `JavaLong`.
@@ -588,6 +632,23 @@ enum UpcallConversionStep {
     case .javaObjectArray(let inner, let elementJavaClass):
       let inner = inner.render(&printer, placeholder)
       return "[\(elementJavaClass)?](fromJNI: \(inner).javaThis, in: \(inner).javaEnvironment)"
+
+    case .swiftClosureToJava(let inner, let name, let interfaceStruct, let argumentConversions, let isMainActor):
+      let inner = inner.render(&printer, placeholder)
+      let arguments = argumentConversions.enumerated().map { index, conversion in
+        conversion.replacingOccurrences(of: "%ARG%", with: "_swiftClosureArgument(arguments$, \(index), in: environment)")
+      }
+      let makeClosure = isMainActor ? "_makeMainActorSwiftClosure" : "_makeSwiftClosure"
+      printer.print(
+        """
+        let \(name)Closure$ = \(inner)
+        let \(name)Handle$ = \(makeClosure) { arguments$, environment in
+          \(name)Closure$(\(arguments.joined(separator: ", ")))
+          return nil
+        }
+        """
+      )
+      return "try! JavaClass<\(interfaceStruct)>(environment: JavaVirtualMachine.shared().environment())._\(name)FromSwiftClosure(\(name)Handle$)"
 
     case .boxed(let inner, let javaClass):
       let inner = inner.render(&printer, placeholder)
