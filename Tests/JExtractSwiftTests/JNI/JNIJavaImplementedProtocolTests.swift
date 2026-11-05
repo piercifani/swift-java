@@ -148,6 +148,29 @@ struct JNIJavaImplementedProtocolTests {
     )
   }
 
+  /// Requirements with the same signature are told apart by name: only the one a protocol extension
+  /// implements is left to it.
+  @Test
+  func sameSignatureRequirements_areToldApartByName() throws {
+    try assertOutput(
+      input: """
+        public protocol Session {
+          func reconnect() async
+          func logout() async
+        }
+        extension Session {
+          public func reconnect() async {}
+        }
+        """,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["public func logout() async {"],
+      notExpectedChunks: ["public func reconnect() async {\n    let environment$"]
+    )
+  }
+
   // MARK: Protocols from other modules
 
   let crossModuleSource = """

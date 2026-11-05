@@ -223,7 +223,7 @@ extension JNISwift2JavaGenerator {
       // A member a protocol extension implements keeps its Swift implementation.
       for function in translatedWrapper.functions
       where !translatedWrapper.importedType.methods.contains(where: {
-        $0.functionSignature == function.originalFunctionSignature
+        $0.name == function.swiftFunctionName && $0.functionSignature == function.originalFunctionSignature
           && hasProtocolExtensionImplementation($0, in: translatedWrapper.importedType)
       }) {
         try printInterfaceWrapperFunctionImpl(&printer, function, inside: translatedWrapper)
