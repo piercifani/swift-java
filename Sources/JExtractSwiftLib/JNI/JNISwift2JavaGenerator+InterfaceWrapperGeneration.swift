@@ -339,7 +339,7 @@ extension JNISwift2JavaGenerator {
       }
       if optionalsAsNullable {
         if let boxClass = wrappedType.javaBoxClassName {
-          return .map(.placeholder, body: .boxed(.placeholder, javaClass: boxClass))
+          return .flatMap(.placeholder, body: .boxed(.placeholder, javaClass: boxClass))
         }
         return .flatMap(.placeholder, body: try translateParameter(parameterName: name, type: wrappedType))
       }
@@ -590,7 +590,12 @@ enum UpcallConversionStep {
       return "[\(elementJavaClass)?](fromJNI: \(inner).javaThis, in: \(inner).javaEnvironment)"
 
     case .boxed(let inner, let javaClass):
-      return "\(javaClass)(\(inner.render(&printer, placeholder)))"
+      let inner = inner.render(&printer, placeholder)
+      // The constructors of Java's boxed numbers are deprecated in favor of `valueOf`.
+      if javaClass == "JavaString" {
+        return "JavaString(\(inner))"
+      }
+      return "try! JavaClass<\(javaClass)>(environment: JavaVirtualMachine.shared().environment()).valueOf(\(inner))"
 
     case .flatMap(let inner, let body):
       let inner = inner.render(&printer, placeholder)

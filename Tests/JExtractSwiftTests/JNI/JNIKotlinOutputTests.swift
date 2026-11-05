@@ -47,7 +47,7 @@ struct JNIKotlinOutputTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         "public func apply(_ _0: JavaString?, _ _1: JavaLong?, _ _2: JavaItem?)",
-        "return JavaLong($0)",
+        "return try! JavaClass<JavaLong>(environment: JavaVirtualMachine.shared().environment()).valueOf($0)",
       ]
     )
   }
