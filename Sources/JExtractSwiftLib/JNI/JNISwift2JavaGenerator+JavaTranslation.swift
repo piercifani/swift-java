@@ -874,6 +874,11 @@ extension JNISwift2JavaGenerator {
       if javaType.isPrimitive {
         return nil
       }
+      // In front of an array type, a type-use annotation (as JetBrains' are) applies to its elements: Kotlin
+      // would read `@Nullable Item[]` as `Array<Item?>`. Arrays are left unannotated, as platform types.
+      if case .array = javaType {
+        return nil
+      }
       return (nullable ? config.nullableAnnotation : config.nonNullAnnotation).map { JavaAnnotation(className: $0) }
     }
 

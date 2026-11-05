@@ -101,4 +101,21 @@ struct JNINullabilityAnnotationsTests {
       notExpectedChunks: ["@NonNull", "@Nullable"]
     )
   }
+
+  /// A type-use annotation in front of an array type applies to its elements, so arrays aren't annotated.
+  @Test
+  func arraysAreNotAnnotated() throws {
+    try assertOutput(
+      input: """
+        public struct Item {}
+        public func items(_ values: [Item]) -> [Item] { values }
+        """,
+      config: config(optionalsAsNullable: true),
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["public static Item[] items(Item[] values, SwiftArena swiftArena) {"],
+      notExpectedChunks: ["@androidx.annotation.NonNull Item[]", "@NonNull Item[]"]
+    )
+  }
 }
