@@ -168,7 +168,8 @@ struct JNICodegenFixesTests {
       sink: sink
     )
     let skipped = sink.skipped.map { String($0.prefix { $0 != ":" }) }.sorted()
-    #expect(skipped == ["Holder.fromFunction", "Holder.made", "Holder.member"], "\(sink.skipped)")
+    // `Item.shared` is declared an `Item`, so `member` is one; a function's result isn't inferred.
+    #expect(skipped == ["Holder.fromFunction", "Holder.made"], "\(sink.skipped)")
   }
 
   private func generate(_ source: String, sink: SkippedDeclarationCollector? = nil) throws -> JNISwift2JavaGenerator {
@@ -190,5 +191,37 @@ struct JNICodegenFixesTests {
     var swiftPrinter = SwiftPrinter(mode: .accumulateAll)
     try generator.writeSwiftThunkSources(&swiftPrinter)
     return generator
+  }
+
+  /// Unannotated properties initialized with a nested type's initializer, or with an enum case or a static
+  /// property of a type, have that type.
+  @Test
+  func inferredTypes_ofNestedInitializersAndStaticMembers() throws {
+    try assertOutput(
+      input: """
+        public enum Style { case linear, curved }
+        public struct Avatar {
+          public static let empty = Avatar()
+          public static let initialized = Self()
+        }
+        public struct Event {
+          public struct Metadata {
+            public static let empty = Metadata()
+          }
+          public var style = Style.linear
+          public var avatar = Avatar.empty
+          public var avatar2 = Avatar.initialized
+        }
+        """,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "public Style getStyle(",
+        "public Avatar getAvatar(",
+        "public Avatar getAvatar2(",
+        "public static Event.Metadata getEmpty(",
+      ]
+    )
   }
 }

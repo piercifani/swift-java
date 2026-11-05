@@ -386,7 +386,11 @@ extension SwiftFunctionSignature {
   /// checking: a literal (`42`, `-1`, `1.5`, `"text"`, `true`), or an initializer call `T(...)` /
   /// `A.B(...)` whose callee resolves to a nominal type. Anything else, such as `T.member` or
   /// `makeValue()`, still needs an explicit annotation.
-  static func inferredType(of expr: ExprSyntax, lookupContext: SwiftTypeLookupContext) -> SwiftType? {
+  static func inferredType(
+    of expr: ExprSyntax,
+    enclosingType: SwiftType? = nil,
+    lookupContext: SwiftTypeLookupContext
+  ) -> SwiftType? {
     let knownTypes = SwiftKnownTypes(symbolTable: lookupContext.symbolTable)
     if expr.is(IntegerLiteralExprSyntax.self) {
       return knownTypes.int
@@ -405,14 +409,52 @@ extension SwiftFunctionSignature {
     if expr.is(BooleanLiteralExprSyntax.self) {
       return knownTypes.bool
     }
+    // `Type(...)`
     if let call = expr.as(FunctionCallExprSyntax.self),
-      let typeSyntax = typeSyntax(naming: call.calledExpression),
-      let type = try? SwiftType(typeSyntax, lookupContext: lookupContext),
-      case .nominal = type, !type.isUnresolvedTypePlaceholder
+      let type = namedType(call.calledExpression, enclosingType: enclosingType, lookupContext: lookupContext)
+    {
+      return type
+    }
+    // `Type.member`, an enum case or a static property of the type itself.
+    if let member = expr.as(MemberAccessExprSyntax.self), let base = member.base,
+      let type = namedType(base, enclosingType: enclosingType, lookupContext: lookupContext),
+      case .nominal(let nominal) = type,
+      nominal.nominalTypeDecl.hasMemberOfItsOwnType(named: member.declName.baseName.text)
     {
       return type
     }
     return nil
+  }
+
+  /// The nominal type an expression names: `Foo` or `A.B`, looked up in the enclosing type first.
+  private static func namedType(
+    _ expr: ExprSyntax,
+    enclosingType: SwiftType?,
+    lookupContext: SwiftTypeLookupContext
+  ) -> SwiftType? {
+    if let reference = expr.as(DeclReferenceExprSyntax.self), reference.baseName.tokenKind == .keyword(.Self),
+      case .nominal(let enclosing) = enclosingType, !enclosing.isProtocol
+    {
+      return enclosingType
+    }
+    if let reference = expr.as(DeclReferenceExprSyntax.self), reference.argumentNames == nil,
+      case .nominal(let enclosing) = enclosingType
+    {
+      var scope: SwiftNominalTypeDeclaration? = enclosing.nominalTypeDecl
+      while let parent = scope {
+        if let nested = lookupContext.symbolTable.lookupNestedType(reference.baseName.text, parent: parent) {
+          return .nominal(SwiftNominalType(nominalTypeDecl: nested))
+        }
+        scope = parent.parent
+      }
+    }
+    guard let typeSyntax = typeSyntax(naming: expr),
+      let type = try? SwiftType(typeSyntax, lookupContext: lookupContext),
+      case .nominal = type, !type.isUnresolvedTypePlaceholder
+    else {
+      return nil
+    }
+    return type
   }
 
   /// `Foo` or `A.B` written as an expression, as a type.
@@ -450,7 +492,7 @@ extension SwiftFunctionSignature {
     if let varTypeNode = binding.typeAnnotation?.type {
       valueType = try SwiftType(varTypeNode, lookupContext: lookupContext)
     } else if let initializer = binding.initializer?.value,
-      let inferred = Self.inferredType(of: initializer, lookupContext: lookupContext)
+      let inferred = Self.inferredType(of: initializer, enclosingType: enclosingType, lookupContext: lookupContext)
     {
       valueType = inferred
     } else {
@@ -703,4 +745,34 @@ public enum SwiftFunctionTranslationError: Error {
   case genericParameterSpecifier(GenericParameterSyntax)
   case expressionInGenericRequirement(GenericRequirementSyntax)
   case layoutRequirement(GenericRequirementSyntax)
+}
+
+extension SwiftNominalTypeDeclaration {
+  /// Whether `name` is a case of this enum, or a static property of this type whose type is the type itself:
+  /// declared `Self` or the type's name, or initialized with `Self(...)`, `Name(...)` or `.init(...)`.
+  func hasMemberOfItsOwnType(named name: String) -> Bool {
+    for member in syntax.memberBlock.members {
+      if let cases = member.decl.as(EnumCaseDeclSyntax.self),
+        cases.elements.contains(where: { $0.name.text == name })
+      {
+        return true
+      }
+      guard let variable = member.decl.as(VariableDeclSyntax.self),
+        variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) })
+      else {
+        continue
+      }
+      for binding in variable.bindings where binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
+        if let annotation = binding.typeAnnotation?.type.trimmedDescription {
+          return annotation == "Self" || annotation == self.name
+        }
+        guard let call = binding.initializer?.value.as(FunctionCallExprSyntax.self) else {
+          return false
+        }
+        let callee = call.calledExpression.trimmedDescription
+        return callee == "Self" || callee == self.name || callee == ".init"
+      }
+    }
+    return false
+  }
 }
