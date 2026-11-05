@@ -27,6 +27,7 @@ struct JNIImplicitExistentialTests {
 
     public struct Clients {
       public let client: Client
+      public init(client: Client) { self.client = client }
       public func use(client: Client) {}
     }
     """
@@ -40,6 +41,8 @@ struct JNIImplicitExistentialTests {
       expectedChunks: [
         "public Client getClient(SwiftArena swiftArena) {",
         "return ClientBox.wrapMemoryAddressUnsafe(result.selfPointer, result.selfTypePointer, swiftArena);",
+        "public static <_T0 extends Client> Clients init(_T0 client, SwiftArena swiftArena) {",
+        "private static native long $init(java.lang.Object client);",
         "public <_T0 extends Client> void use(_T0 client) {",
         "private static native void $use(java.lang.Object client, long selfPointer);",
       ],
