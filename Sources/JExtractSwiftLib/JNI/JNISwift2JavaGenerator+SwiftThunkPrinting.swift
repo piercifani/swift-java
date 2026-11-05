@@ -225,6 +225,8 @@ extension JNISwift2JavaGenerator {
         printer.println()
       }
 
+      printUnsupportedRequirementImpls(&printer, translatedWrapper)
+
       // FIXME: Add support for protocol variables https://github.com/swiftlang/swift-java/issues/457
       //      for variable in translatedWrapper.variables {
       //        printerInterfaceWrapperVariable(&printer, variable, inside: translatedWrapper)
@@ -292,6 +294,39 @@ extension JNISwift2JavaGenerator {
         let result = function.resultConversion.render(&printer, javaUpcall)
         printer.print("\(returnStmt)\(result)")
       }
+    }
+  }
+
+  /// Implementations of the requirements Swift can't call on a Java implementation yet, which stop with
+  /// an error, unless a protocol extension implements them.
+  private func printUnsupportedRequirementImpls(_ printer: inout SwiftPrinter, _ wrapper: JavaInterfaceSwiftWrapper) {
+    let type = wrapper.importedType
+    let unsupported = wrapper.unsupportedRequirements.filter { !hasProtocolExtensionImplementation($0, in: type) }
+    func fatalErrorCall(_ name: String) -> String {
+      #"fatalError("\#(type.swiftNominal.qualifiedName).\#(name) can't be called on a Java implementation yet")"#
+    }
+
+    for requirement in unsupported where requirement.apiKind == .function {
+      printer.printBraceBlock(publicSignature(requirement.swiftDecl)) { printer in
+        printer.print(fatalErrorCall(requirement.name))
+      }
+      printer.println()
+    }
+
+    let accessors = unsupported.filter { $0.apiKind == .getter || $0.apiKind == .setter }
+    for (name, accessors) in Dictionary(grouping: accessors, by: \.name).sorted(by: { $0.key < $1.key }) {
+      guard let getter = accessors.first(where: { $0.apiKind == .getter }) else {
+        continue
+      }
+      printer.printBraceBlock("public var \(name): \(getter.functionSignature.result.type)") { printer in
+        if accessors.contains(where: { $0.apiKind == .setter }) {
+          printer.print("get { \(fatalErrorCall(name)) }")
+          printer.print("set { \(fatalErrorCall(name)) }")
+        } else {
+          printer.print(fatalErrorCall(name))
+        }
+      }
+      printer.println()
     }
   }
 

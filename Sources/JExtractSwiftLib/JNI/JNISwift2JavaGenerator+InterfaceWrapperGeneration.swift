@@ -53,6 +53,8 @@ extension JNISwift2JavaGenerator {
     let protocolType: SwiftNominalType
     let functions: [Function]
     let variables: [Variable]
+    /// Requirements Swift can't call on a Java implementation yet.
+    let unsupportedRequirements: [ExtractedFunc]
     let importedType: ExtractedNominalType
 
     var wrapperName: String {
@@ -129,29 +131,25 @@ extension JNISwift2JavaGenerator {
         throw JavaTranslationError.protocolStaticRequirementsNotSupported
       }
 
-      let functions = try type.methods.map { method in
-        try translate(function: method)
-      }
-
-      // FIXME: Finish support for variables
-      if !type.variables.isEmpty {
-        throw JavaTranslationError.protocolVariablesNotSupported
-      }
-
-      let variables = try Dictionary(grouping: type.variables, by: { $0.swiftDecl.id }).map { (id, funcs) in
-        precondition(funcs.count > 0 && funcs.count <= 2, "Variables must contain a getter and optionally a setter")
-        guard let getter = funcs.first(where: { $0.apiKind == .getter }) else {
-          fatalError("Getter not found for variable with imported funcs: \(funcs)")
+      // A requirement Swift can't call on a Java implementation yet doesn't keep Java from implementing
+      // the others: the wrapper stops with an error if it's called.
+      var functions: [JavaInterfaceSwiftWrapper.Function] = []
+      var unsupportedRequirements: [ExtractedFunc] = []
+      for method in type.methods {
+        do {
+          functions.append(try translate(function: method))
+        } catch {
+          unsupportedRequirements.append(method)
         }
-        let setter = funcs.first(where: { $0.apiKind == .setter })
-
-        return try self.translateVariable(getter: getter, setter: setter)
       }
+      // FIXME: Finish support for variables
+      unsupportedRequirements += type.variables
 
       return JavaInterfaceSwiftWrapper(
         protocolType: SwiftNominalType(nominalTypeDecl: type.swiftNominal),
         functions: functions,
-        variables: variables,
+        variables: [],
+        unsupportedRequirements: unsupportedRequirements,
         importedType: type
       )
     }
