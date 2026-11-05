@@ -223,4 +223,38 @@ struct JNICodegenFixesTests {
       ]
     )
   }
+  /// Array literals, enum cases with payloads and annotated instance properties of an inferred value.
+  static let literalsAndMembersSource = """
+    public enum Activity { case trade(Int64) }
+    public struct Links {
+      public init() {}
+      public var help: String { "" }
+    }
+    public struct Config {
+      public static let keys = ["a", "b"]
+      public static let mock = Activity.trade(1)
+      public var help = Links().help
+      public var mixed = ["a", 1]
+      public var made = Links().make()
+    }
+    """
+
+  @Test
+  func inferredTypes_ofArrayLiteralsEnumCasesAndInstanceProperties() throws {
+    try assertOutput(
+      input: Self.literalsAndMembersSource,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "public static java.lang.String[] getKeys(",
+        "public static Activity getMock(",
+        "public java.lang.String getHelp(",
+      ]
+    )
+    let sink = SkippedDeclarationCollector()
+    _ = try generate(Self.literalsAndMembersSource, sink: sink)
+    let skipped = sink.skipped.map { String($0.prefix { $0 != ":" }) }.sorted()
+    #expect(skipped == ["Config.made", "Config.mixed"], "\(sink.skipped)")
+  }
 }

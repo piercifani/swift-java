@@ -353,9 +353,10 @@ extension SwiftFunctionSignature {
   }
 
   /// The type of an unannotated variable, when its initializer makes it unambiguous without type
-  /// checking: a literal (`42`, `-1`, `1.5`, `"text"`, `true`), or an initializer call `T(...)` /
-  /// `A.B(...)` whose callee resolves to a nominal type. Anything else, such as `T.member` or
-  /// `makeValue()`, still needs an explicit annotation.
+  /// checking: a literal (`42`, `-1`, `1.5`, `"text"`, `true`), an array literal whose elements all
+  /// have the same such type, an initializer call `T(...)` / `A.B(...)`, an enum case `T.c` /
+  /// `T.c(...)` or static property of the type itself, or an annotated instance property of any of
+  /// those (`T().property`). Anything else, such as `makeValue()`, still needs an explicit annotation.
   static func inferredType(
     of expr: ExprSyntax,
     enclosingType: SwiftType? = nil,
@@ -385,13 +386,30 @@ extension SwiftFunctionSignature {
     {
       return type
     }
-    // `Type.member`, an enum case or a static property of the type itself.
-    if let member = expr.as(MemberAccessExprSyntax.self), let base = member.base,
+    // `[a, b]`
+    if let array = expr.as(ArrayExprSyntax.self), let first = array.elements.first,
+      let element = inferredType(of: first.expression, enclosingType: enclosingType, lookupContext: lookupContext),
+      array.elements.dropFirst().allSatisfy({
+        inferredType(of: $0.expression, enclosingType: enclosingType, lookupContext: lookupContext) == element
+      })
+    {
+      return knownTypes.arraySugar(element)
+    }
+    // `Type.member` or `Type.member(...)`: an enum case, or a static property of the type itself.
+    let memberExpr = expr.as(FunctionCallExprSyntax.self)?.calledExpression ?? expr
+    if let member = memberExpr.as(MemberAccessExprSyntax.self), let base = member.base,
       let type = namedType(base, enclosingType: enclosingType, lookupContext: lookupContext),
       case .nominal(let nominal) = type,
       nominal.nominalTypeDecl.hasMemberOfItsOwnType(named: member.declName.baseName.text)
     {
       return type
+    }
+    // `value.property`, an annotated instance property of a value whose type is inferred.
+    if let member = expr.as(MemberAccessExprSyntax.self), let base = member.base,
+      case .nominal(let nominal)? = inferredType(of: base, enclosingType: enclosingType, lookupContext: lookupContext),
+      let annotation = nominal.nominalTypeDecl.instancePropertyAnnotation(named: member.declName.baseName.text)
+    {
+      return try? SwiftType(annotation, lookupContext: lookupContext)
     }
     return nil
   }
@@ -728,5 +746,20 @@ extension SwiftNominalTypeDeclaration {
       }
     }
     return false
+  }
+
+  /// The declared type of the instance property `name` in this type's body.
+  func instancePropertyAnnotation(named name: String) -> TypeSyntax? {
+    for member in syntax.memberBlock.members {
+      guard let variable = member.decl.as(VariableDeclSyntax.self),
+        !variable.modifiers.contains(where: { $0.name.tokenKind == .keyword(.static) || $0.name.tokenKind == .keyword(.class) })
+      else {
+        continue
+      }
+      for binding in variable.bindings where binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text == name {
+        return binding.typeAnnotation?.type
+      }
+    }
+    return nil
   }
 }
