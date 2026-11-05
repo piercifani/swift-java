@@ -57,4 +57,27 @@ struct JNIProtocolExtensionTests {
       ]
     )
   }
+
+  /// The extension implementing a requirement needn't be extracted itself (here it's internal).
+  @Test
+  func requirementImplementedByUnextractedExtension_javaBindings() throws {
+    try assertOutput(
+      input: """
+        public protocol Named {
+          var name: String { get }
+        }
+
+        extension Named {
+          var name: String { "named" }
+        }
+
+        public struct Thing: Named {}
+        """,
+      .jni,
+      .java,
+      expectedChunks: [
+        "public default java.lang.String getName() {"
+      ]
+    )
+  }
 }
