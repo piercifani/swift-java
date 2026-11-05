@@ -305,34 +305,52 @@ extension JNISwift2JavaGenerator {
   /// Implementations of the requirements Swift can't call on a Java implementation yet, which stop with
   /// an error, unless a protocol extension implements them.
   private func printUnsupportedRequirementImpls(_ printer: inout SwiftPrinter, _ wrapper: JavaInterfaceSwiftWrapper) {
+    // From the protocol's own declarations, so that requirements jextract didn't import (with types it
+    // doesn't know) get one too: the wrapper must implement every requirement to conform.
     let type = wrapper.importedType
-    let unsupported = wrapper.unsupportedRequirements.filter { !hasProtocolExtensionImplementation($0, in: type) }
+    let supported = Set(wrapper.functions.compactMap { $0.swiftDecl.as(FunctionDeclSyntax.self).map(Self.requirementKey) })
     func fatalErrorCall(_ name: String) -> String {
       #"fatalError("\#(type.swiftNominal.qualifiedName).\#(name) can't be called on a Java implementation yet")"#
     }
 
-    for requirement in unsupported where requirement.apiKind == .function {
-      printer.printBraceBlock(publicSignature(requirement.swiftDecl)) { printer in
-        printer.print(fatalErrorCall(requirement.name))
-      }
-      printer.println()
-    }
-
-    let accessors = unsupported.filter { $0.apiKind == .getter || $0.apiKind == .setter }
-    for (name, accessors) in Dictionary(grouping: accessors, by: \.name).sorted(by: { $0.key < $1.key }) {
-      guard let getter = accessors.first(where: { $0.apiKind == .getter }) else {
-        continue
-      }
-      printer.printBraceBlock("public var \(name): \(getter.functionSignature.result.type)") { printer in
-        if accessors.contains(where: { $0.apiKind == .setter }) {
-          printer.print("get { \(fatalErrorCall(name)) }")
-          printer.print("set { \(fatalErrorCall(name)) }")
-        } else {
-          printer.print(fatalErrorCall(name))
+    for member in type.swiftNominal.syntax.memberBlock.members {
+      if let function = member.decl.as(FunctionDeclSyntax.self) {
+        let key = Self.requirementKey(function)
+        guard !supported.contains(key), !type.protocolExtensionMembers.contains(key) else {
+          continue
+        }
+        printer.printBraceBlock(publicSignature(function)) { printer in
+          printer.print(fatalErrorCall(function.name.text))
+        }
+        printer.println()
+      } else if let variable = member.decl.as(VariableDeclSyntax.self) {
+        for binding in variable.bindings {
+          guard let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+            let typeAnnotation = binding.typeAnnotation, !type.protocolExtensionMembers.contains(name)
+          else {
+            continue
+          }
+          let isSettable = binding.accessorBlock?.description.contains("set") ?? false
+          printer.printBraceBlock("public var \(name)\(typeAnnotation.trimmedDescription)") { printer in
+            if isSettable {
+              printer.print("get { \(fatalErrorCall(name)) }")
+              printer.print("set { \(fatalErrorCall(name)) }")
+            } else {
+              printer.print(fatalErrorCall(name))
+            }
+          }
+          printer.println()
         }
       }
-      printer.println()
     }
+  }
+
+  /// How `protocolExtensionMembers` names a method: `name(label:)`.
+  private static func requirementKey(_ function: FunctionDeclSyntax) -> String {
+    let labels = function.signature.parameterClause.parameters.map {
+      ($0.firstName.tokenKind == .wildcard ? "_" : $0.firstName.text) + ":"
+    }
+    return "\(function.name.text)(\(labels.joined()))"
   }
 
   /// A requirement's signature, made `public` so the wrapper's default implementations are visible

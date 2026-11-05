@@ -114,6 +114,40 @@ struct JNIJavaImplementedProtocolTests {
     )
   }
 
+  /// A requirement jextract doesn't import (its types aren't supported) still gets an implementation,
+  /// from its declaration, so the wrapper conforms.
+  @Test
+  func unimportedRequirement_isImplementedFromItsDeclaration() throws {
+    try assertOutput(
+      input: """
+        public protocol Tracker {
+          func track(event: String, parameters: [String: Any])
+          func flush()
+          var name: String { get }
+        }
+        """,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        """
+        public func track(event: String, parameters: [String: Any]) {
+          fatalError("Tracker.track can't be called on a Java implementation yet")
+        }
+        """,
+        """
+        public var name: String {
+          fatalError("Tracker.name can't be called on a Java implementation yet")
+        }
+        """,
+      ],
+      notExpectedChunks: [
+        #"fatalError("Tracker.flush can't be called"#
+      ]
+    )
+  }
+
   // MARK: Protocols from other modules
 
   let crossModuleSource = """
