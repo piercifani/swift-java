@@ -164,6 +164,7 @@ extension SwiftFunctionSignature {
       genericParameters: genericParams,
       genericRequirements: genericRequirements
     )
+    self.spellBareProtocolsAsExistentials()
   }
 
   public init(
