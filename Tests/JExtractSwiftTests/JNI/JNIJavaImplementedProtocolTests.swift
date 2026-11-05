@@ -173,7 +173,8 @@ struct JNIJavaImplementedProtocolTests {
     )
   }
 
-  /// A protocol refining one Java can't implement, such as `Encodable`, is implemented only by Swift values.
+  /// A protocol refining one Java can't implement, such as `Encodable`, gets no Swift wrapper for Java
+  /// implementations; Java can still implement its interface.
   @Test
   func protocolRefiningEncodable_isNotImplementedInJava() throws {
     try assertOutput(
@@ -189,6 +190,19 @@ struct JNIJavaImplementedProtocolTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [],
       notExpectedChunks: ["SwiftJavaHostWrapper", "SwiftJavaHostImplementation", "_SwiftModule_use_host_Wrapper"]
+    )
+    // Java still implements the interface, which Swift doesn't take an implementation of.
+    try assertOutput(
+      input: """
+        public protocol Host: Encodable {
+          func name() -> String
+        }
+        """,
+      config: config,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["public interface Host extends SwiftDowncastable {"]
     )
   }
 

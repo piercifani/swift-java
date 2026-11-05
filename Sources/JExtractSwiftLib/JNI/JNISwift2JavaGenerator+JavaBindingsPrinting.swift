@@ -198,7 +198,12 @@ extension JNISwift2JavaGenerator {
     // If we cannot generate Swift wrappers
     // that allows the user to implement the wrapped interface in Java
     // then we require only JExtracted types can conform to this.
-    if !self.interfaceProtocolWrappers.keys.contains(decl) && !extends.contains("JNISwiftInstance") {
+    // A protocol refining one Java can't implement (`Encodable`) gets no Swift wrapper for Java
+    // implementations, but Java can still implement its interface: only Swift won't take one.
+    let isJavaImplementable =
+      self.interfaceProtocolWrappers.keys.contains(decl)
+      || (config.effectiveEnableJavaCallbacks && !decl.swiftNominal.canBeImplementedInJava)
+    if !isJavaImplementable && !extends.contains("JNISwiftInstance") {
       extends.append("JNISwiftInstance")
     }
 
@@ -214,7 +219,7 @@ extension JNISwift2JavaGenerator {
       // (`supportedProtocolRequirements(of:)`) so the interface never
       // declares a requirement (e.g. a property setter) that the box
       // doesn't implement.
-      let isJavaImplementable = self.interfaceProtocolWrappers.keys.contains(decl)
+
       for requirement in self.supportedProtocolRequirements(of: decl) {
         if self.hasProtocolExtensionImplementation(requirement, in: decl) {
           printProtocolDefaultMethod(&printer, decl, requirement, isJavaImplementable: isJavaImplementable)
