@@ -30,8 +30,7 @@ if let localPath = Context.environment["DOCC_PLUGIN_PATH"] {
 let package = Package(
   name: "swift-java",
   platforms: [
-    .macOS(.v13),
-    .iOS(.v16),
+    .macOS(.v13)
   ],
   products: [
     // ==== SwiftJava (i.e. calling Java directly Swift utilities)
