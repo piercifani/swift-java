@@ -88,7 +88,7 @@ extension JNISwift2JavaGenerator {
 
       for group: (key: String, value: [Dictionary<String, ExtractedNominalType>.Element]) in Dictionary(
         grouping: filteredTypes,
-        by: { $0.value.sourceFilePath },
+        by: { $0.value.thunkSourceFilePath(swiftModuleName: self.swiftModuleName) },
       ) {
         logger.warning("Writing types in file group: \(group.key): \(group.value.map(\.key))")
 
