@@ -380,3 +380,61 @@ struct JNIEnumTests {
     )
   }
 }
+
+extension JNIEnumTests {
+  /// A case with a closure payload, which Java can't receive, is kept without it: Java can still create
+  /// it, recognize it, and call the enum's methods on it.
+  var unbridgedPayloadSource: String { """
+    public enum Policy {
+      case standard
+      case custom((Int64) -> Bool)
+
+      public func allows(_ value: Int64) -> Bool {
+        switch self {
+        case .standard: return true
+        case .custom(let allows): return allows(value)
+        }
+      }
+    }
+    """
+  }
+
+  @Test
+  func unbridgedPayload_javaBindings() throws {
+    try assertOutput(
+      input: unbridgedPayloadSource,
+      .jni,
+      .java,
+      expectedChunks: [
+        "record Custom() implements Case {}",
+        "case CUSTOM -> new Case.Custom();",
+        """
+        public java.util.Optional<Case.Custom> getAsCustom() {
+          if (getDiscriminator() != Discriminator.CUSTOM) {
+            return java.util.Optional.empty();
+          }
+          return java.util.Optional.of(new Case.Custom());
+        }
+        """,
+        "public static Policy custom(java.util.function.LongPredicate arg0, SwiftArena swiftArena) {",
+        "public boolean allows(long value) {",
+      ]
+    )
+  }
+
+  @Test
+  func unbridgedPayload_swiftThunks() throws {
+    try assertOutput(
+      input: unbridgedPayloadSource,
+      .jni,
+      .swift,
+      expectedChunks: [
+        "Java_com_example_swift_Policy__00024custom__",
+        "Java_com_example_swift_Policy__00024allows__JJ",
+      ],
+      notExpectedChunks: [
+        "getAsCustom"
+      ]
+    )
+  }
+}

@@ -689,7 +689,7 @@ extension JNISwift2JavaGenerator {
       printer.printBraceBlock("return switch (this.getDiscriminator())", .semicolonNewLine) { printer in
         for enumCase in decl.cases {
           if let translatedCase = self.translatedEnumCase(for: enumCase) {
-            if enumCase.parameters.isEmpty {
+            if translatedCase.getAsCaseFunction == nil {
               printer.print(
                 "case \(enumCase.name.uppercased()) -> new Case.\(translatedCase.name)\(caseGenericClause)();"
               )
