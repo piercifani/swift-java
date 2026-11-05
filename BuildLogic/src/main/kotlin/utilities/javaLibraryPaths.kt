@@ -15,19 +15,15 @@
 package utilities
 
 import org.gradle.api.Project
-import org.gradle.kotlin.dsl.support.serviceOf
-import org.gradle.process.ExecOperations
-import java.io.ByteArrayOutputStream
 import java.io.File
 
 private fun Project.swiftRuntimeLibraryPaths(): List<String> {
-    val stdout = ByteArrayOutputStream()
-    serviceOf<ExecOperations>().exec {
+    // Through `providers.exec`: Gradle deprecates starting a process at configuration time otherwise.
+    val output = providers.exec {
         workingDir(projectDir)
         commandLine("swiftc", "-print-target-info")
-        standardOutput = stdout
-    }
-    return json.decodeFromString<SwiftcTargetInfo>(stdout.toString()).paths.runtimeLibraryPaths
+    }.standardOutput.asText.get()
+    return json.decodeFromString<SwiftcTargetInfo>(output).paths.runtimeLibraryPaths
 }
 
 fun Project.javaLibraryPaths(rootDir: File?): List<String> {
