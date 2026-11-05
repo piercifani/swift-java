@@ -741,6 +741,9 @@ extension JNISwift2JavaGenerator {
         parentName: decl.parentType?.asNominalType?.nominalTypeDecl.qualifiedTypeName ?? SwiftQualifiedTypeName(swiftModuleName),
       )
       let implementingProtocols = protocolWrappers.map(\.javaInterfaceSwiftProtocolWrapperName).joined(separator: .comma)
+      guard printedProtocolParameterWrappers.insert(swiftClassName).inserted else {
+        continue
+      }
 
       // `@unchecked Sendable`: the protocols may require `Sendable`, and the wrapper only holds Java
       // references, which every call re-binds to the calling thread.

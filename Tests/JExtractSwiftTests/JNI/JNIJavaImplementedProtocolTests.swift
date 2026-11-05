@@ -12,7 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+import CodePrinting
 import JExtractSwiftLib
+import SwiftExtract
 import SwiftJavaConfigurationShared
 import Testing
 
@@ -188,6 +190,48 @@ struct JNIJavaImplementedProtocolTests {
       expectedChunks: [],
       notExpectedChunks: ["SwiftJavaHostWrapper", "SwiftJavaHostImplementation", "_SwiftModule_use_host_Wrapper"]
     )
+  }
+
+  /// Default-argument overloads taking the same protocol parameter share its wrapper class.
+  @Test
+  func defaultArgumentOverloads_shareTheParameterWrapper() throws {
+    try assertOutput(
+      input: """
+        public protocol Scene {
+          func name() -> String
+        }
+        public final class Screen {
+          public init(scene: any Scene, title: String = "") {}
+        }
+        """,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: ["final class _Screen_init_scene_Wrapper: SwiftJavaSceneWrapper, @unchecked Sendable {"]
+    )
+    var printer = SwiftPrinter(mode: .accumulateAll)
+    let translator = makeSwiftJavaAnalyzer(config: { var c = config; c.swiftModule = "SwiftModule"; return c }())
+    try translator.analyze(path: "/fake/Fake.swift", text: """
+      public protocol Scene {
+        func name() -> String
+      }
+      public final class Screen {
+        public init(scene: any Scene, title: String = "") {}
+      }
+      """)
+    let generator = JNISwift2JavaGenerator(
+      config: { var c = config; c.swiftModule = "SwiftModule"; return c }(),
+      translator: translator,
+      javaPackage: "com.example.swift",
+      swiftOutputDirectory: "/fake",
+      javaOutputDirectory: "/fake",
+      javaClassLookupTable: [:],
+      moduleJavaPackages: [:]
+    )
+    try generator.writeSwiftThunkSources(&printer)
+    let output = printer.finalize()
+    #expect(output.components(separatedBy: "final class _Screen_init_scene_Wrapper").count == 2)
   }
 
   // MARK: Protocols from other modules
