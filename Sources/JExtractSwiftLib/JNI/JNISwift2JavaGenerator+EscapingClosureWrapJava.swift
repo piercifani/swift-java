@@ -149,6 +149,9 @@ extension JNISwift2JavaGenerator {
     if type.isSwiftError {
       return isResult ? "Throwable!" : "Throwable?"
     }
+    if config.effectiveDictionariesAsJavaMaps, let wrapper = type.javaMapObjectWrapperName {
+      return wrapper + (isResult ? "!" : "?")
+    }
     if !isResult, optionalWrapped(type)?.isSwiftError == true {
       return "JavaOptional<Throwable>?"
     }
@@ -297,6 +300,22 @@ extension JNISwift2JavaGenerator {
       return paramList
     } else {
       return "\(paramList) -> \(wrapJavaTypeName(type.resultType, isResult: true))"
+    }
+  }
+}
+
+extension SwiftType {
+  /// The SwiftJava wrapper a dictionary, `Any` or `AnyHashable`, or an optional of one, crosses as with
+  /// `dictionariesAsJavaMaps`.
+  var javaMapObjectWrapperName: String? {
+    guard case .nominal(let nominal) = self else {
+      return nil
+    }
+    switch nominal.asKnownType {
+    case .optional(let wrapped): return wrapped.javaMapObjectWrapperName
+    case .dictionary: return "JavaMap<JavaObject, JavaObject>"
+    case .any, .anyHashable: return "JavaObject"
+    default: return nil
     }
   }
 }

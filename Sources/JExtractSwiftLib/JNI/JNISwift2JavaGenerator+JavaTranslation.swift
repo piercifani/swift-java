@@ -688,6 +688,13 @@ extension JNISwift2JavaGenerator {
         )
       }
 
+      if let javaType = try javaMapObjectType(swiftType) {
+        return TranslatedParameter(
+          parameter: JavaParameter(name: parameterName, type: javaType, annotations: parameterAnnotations),
+          conversion: .placeholder
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
@@ -1400,6 +1407,17 @@ extension JNISwift2JavaGenerator {
         )
       }
 
+      // The native method returns what the bridge made, whose static type is `Object`.
+      if let javaType = try javaMapObjectType(swiftType) {
+        return TranslatedResult(
+          javaType: javaType,
+          nativeJavaType: .javaLangObject,
+          annotations: resultAnnotations,
+          outParameters: [],
+          conversion: javaType == .javaLangObject ? .placeholder : .cast(.placeholder, javaType)
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName
@@ -1592,6 +1610,10 @@ extension JNISwift2JavaGenerator {
     ) throws -> JavaType {
       if swiftType.isSwiftError {
         return .javaLangThrowable
+      }
+      // As in a parameter or result: a `Map`, or `Object`, which is `null` for `nil`.
+      if let javaType = try javaMapObjectType(swiftType) {
+        return javaType
       }
 
       switch swiftType {
@@ -2201,6 +2223,43 @@ extension JNISwift2JavaGenerator {
         genericParameters: genericParameters,
         genericRequirements: genericRequirements,
       )
+    }
+
+    /// With `dictionariesAsJavaMaps`, the Java type of a dictionary, `Any` or `AnyHashable`, or an optional of
+    /// one (`null` for `nil`), which crosses as the Java object its bridge makes; `nil` for other types.
+    func javaMapObjectType(_ swiftType: SwiftType) throws -> JavaType? {
+      guard config.effectiveDictionariesAsJavaMaps, case .nominal(let nominalType) = swiftType else {
+        return nil
+      }
+      switch nominalType.asKnownType {
+      case .optional(let wrapped):
+        return try javaMapObjectType(wrapped)
+      case .dictionary, .any, .anyHashable:
+        return try javaMapComponentType(swiftType)
+      default:
+        return nil
+      }
+    }
+
+    /// The Java type of a value in a `java.util.Map`: boxed, `Object` for `Any`, and the wrapped type of an optional.
+    private func javaMapComponentType(_ swiftType: SwiftType) throws -> JavaType {
+      if case .nominal(let nominalType) = swiftType {
+        switch nominalType.asKnownType {
+        case .optional(let wrapped):
+          return try javaMapComponentType(wrapped)
+        case .any, .anyHashable:
+          return .javaLangObject
+        case .dictionary(let key, let value):
+          return .class(
+            package: "java.util",
+            name: "Map",
+            typeParameters: [try javaMapComponentType(key), try javaMapComponentType(value)]
+          )
+        default:
+          break
+        }
+      }
+      return try javaTypeForDictionaryComponent(swiftType, genericParameters: [], genericRequirements: []).boxedType
     }
 
     func translateDictionaryParameter(

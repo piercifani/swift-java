@@ -507,18 +507,13 @@ final class MethodImportTests {
 
   @Test("Import: public func globalReturnAny() -> Any")
   func func_globalReturnAny() throws {
-    var config = Configuration()
-    config.swiftModule = "__FakeModule"
-    let st = makeSwiftJavaAnalyzer(config: config)
-    st.log.logLevel = .error
-
-    try st.analyze(path: "Fake.swift", text: class_interfaceFile)
-
-    #expect(
-      !st.extractedGlobalFuncs.contains {
-        $0.name == "globalReturnAny"
-      },
-      "'Any' return type is not supported yet"
+    // `Any` resolves, but FFM has no Java type for it yet: the function isn't generated.
+    try assertOutput(
+      input: "public func globalReturnAny() -> Any { 0 }",
+      .ffm,
+      .java,
+      expectedChunks: [],
+      notExpectedChunks: ["globalReturnAny"]
     )
   }
 

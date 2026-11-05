@@ -147,6 +147,19 @@ extension JNISwift2JavaGenerator {
         )
       }
 
+      if let bridge = try javaMapObjectBridge(type) {
+        return NativeParameter(
+          parameters: [JavaParameter(name: parameterName, type: .javaLangObject)],
+          conversion: .method(
+            .constant(bridge),
+            function: "fromJavaObject",
+            arguments: [(nil, .placeholder), ("in", .constant("environment"))]
+          ),
+          indirectConversion: nil,
+          conversionCheck: nil
+        )
+      }
+
       switch type {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.name
@@ -458,7 +471,8 @@ extension JNISwift2JavaGenerator {
         asyncFuncMode: config.effectiveAsyncFuncMode,
         foundationTypesAsJavaTypes: config.effectiveFoundationTypesAsJavaTypes,
         javaImplementableProtocols: Set(protocolWrappers.keys.map(\.swiftNominal.qualifiedName)),
-        optionalsAsNullable: config.effectiveKotlinOutput
+        optionalsAsNullable: config.effectiveKotlinOutput,
+        javaMapObjectBridge: self.javaMapObjectBridge
       )
       let syntheticFunction = try generator.generateSyntheticClosureFunction(
         functionType: functionType,
@@ -913,6 +927,18 @@ extension JNISwift2JavaGenerator {
       // A Swift error is returned as a Java `Throwable`.
       if swiftType.isSwiftError {
         return NativeResult(javaType: .javaLangThrowable, conversion: .javaThrowable(isOptional: false), outParameters: [])
+      }
+
+      if let bridge = try javaMapObjectBridge(swiftType) {
+        return NativeResult(
+          javaType: .javaLangObject,
+          conversion: .method(
+            .constant(bridge),
+            function: "toJavaObject",
+            arguments: [(nil, .placeholder), ("in", .constant("environment"))]
+          ),
+          outParameters: []
+        )
       }
 
       switch swiftType {
@@ -1479,7 +1505,31 @@ extension JNISwift2JavaGenerator {
       )
     }
 
-    private func bridgeTypeName(for swiftType: SwiftType) throws -> String {
+    /// With `dictionariesAsJavaMaps`, the bridge of a dictionary, `Any` or `AnyHashable`, or an optional of one,
+    /// which crosses as the Java object the bridge makes; `nil` for other types.
+    func javaMapObjectBridge(_ swiftType: SwiftType) throws -> String? {
+      guard config.effectiveDictionariesAsJavaMaps, case .nominal(let nominalType) = swiftType else {
+        return nil
+      }
+      switch nominalType.asKnownType {
+      case .optional(let wrapped):
+        return try javaMapObjectBridge(wrapped).map { "NullableBridge<\($0)>" }
+      case .dictionary, .any, .anyHashable:
+        return try bridgeTypeName(for: swiftType)
+      default:
+        return nil
+      }
+    }
+
+    /// The bridge of a key or value in a `java.util.Map`, where an optional is `null` for `nil`.
+    private func javaMapComponentBridge(_ swiftType: SwiftType) throws -> String {
+      if case .nominal(let nominalType) = swiftType, case .optional(let wrapped) = nominalType.asKnownType {
+        return "NullableBridge<\(try javaMapComponentBridge(wrapped))>"
+      }
+      return try bridgeTypeName(for: swiftType)
+    }
+
+    func bridgeTypeName(for swiftType: SwiftType) throws -> String {
       if swiftType.isSwiftError {
         return "ErrorBridge"
       }
@@ -1491,8 +1541,14 @@ extension JNISwift2JavaGenerator {
             return "OptionalBridge<\(try bridgeTypeName(for: wrapped))>"
           case .array(let element):
             return "ArrayBridge<\(try bridgeTypeName(for: element))>"
+          case .dictionary(let key, let value) where config.effectiveDictionariesAsJavaMaps:
+            return "MapBridge<\(try javaMapComponentBridge(key)), \(try javaMapComponentBridge(value))>"
           case .dictionary(let key, let value):
             return "DictionaryBridge<\(try bridgeTypeName(for: key)), \(try bridgeTypeName(for: value))>"
+          case .any:
+            return "AnyBridge"
+          case .anyHashable:
+            return "AnyHashableBridge"
           case .set(let element):
             return "SetBridge<\(try bridgeTypeName(for: element))>"
           case .bool, .int, .uint, .int8, .uint8, .int16, .uint16, .int32, .uint32, .int64, .uint64, .float, .double, .string:

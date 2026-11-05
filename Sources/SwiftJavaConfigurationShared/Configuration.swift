@@ -220,6 +220,16 @@ public struct Configuration: Codable {
     kotlinOutput ?? false
   }
 
+  /// If true, dictionaries cross as `java.util.Map` copies, as Skip bridges them: a Swift dictionary is copied
+  /// into a `LinkedHashMap`, and any Java `Map` is copied into a Swift dictionary. `Any` crosses as `Object`,
+  /// converted by the type of its value (strings, numbers and booleans boxed, arrays as `List`s, dictionaries as
+  /// `Map`s, sets as `Set`s), and an optional inside a dictionary is `null` for `nil`. Without it, a dictionary
+  /// is a `SwiftDictionaryMap` backed by the Swift value. Implied by `kotlinOutput`. Only supported in `jni` mode.
+  public var dictionariesAsJavaMaps: Bool?
+  public var effectiveDictionariesAsJavaMaps: Bool {
+    dictionariesAsJavaMaps ?? effectiveKotlinOutput
+  }
+
   /// Fully qualified name of a Java annotation marking parameters and results that can be `null`, such as
   /// `androidx.annotation.Nullable` or `org.jetbrains.annotations.Nullable`, so Kotlin sees nullable types
   /// instead of platform types. Applied to optionals with `optionalsAsNullable`. It must be applicable to

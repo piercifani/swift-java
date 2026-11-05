@@ -113,6 +113,8 @@ private let swiftSourceFile: SourceFileSyntax = """
 
   public struct Set<Element> {}
 
+  public struct AnyHashable {}
+
   // `_Concurrency` in reality; modeled here with the other standard library types.
   public struct AsyncStream<Element> {}
   public struct AsyncThrowingStream<Element, Failure> {}

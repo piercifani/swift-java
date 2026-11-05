@@ -28,6 +28,16 @@ import SwiftSyntax
 // `SwiftNominalTypeDeclaration` initializer requires.
 
 public enum SwiftSyntheticTypes {
+  /// `Any`, a keyword rather than a declaration, as a type of the standard library.
+  nonisolated(unsafe) public static let anyDeclaration = SwiftNominalTypeDeclaration(
+    name: "Any",
+    sourceFilePath: "",
+    moduleName: "Swift",
+    parent: nil,
+    node: Parser.parse(source: "struct _Any {}").statements.first!.item.cast(StructDeclSyntax.self),
+    isUnresolvedTypePlaceholder: false
+  )
+
   /// Build an unresolved nominal `SwiftType` for the given simple type name.
   /// The result has `isUnresolvedTypePlaceholder == true` so a downstream pass
   /// can recognize and substitute it. See

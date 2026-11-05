@@ -658,6 +658,8 @@ extension SwiftType {
         ?? lookupContext.symbolTable.lookupNestedTypealias(name.text, parent: parentDecl)
     } else if let module {
       typeDecl = lookupContext.moduleQualifiedLookup(name: name.text, in: module)
+    } else if name.tokenKind == .keyword(.Any) {
+      typeDecl = SwiftSyntheticTypes.anyDeclaration
     } else {
       guard let ident = Identifier(name) else {
         throw TypeTranslationError.unknown(originalType)
