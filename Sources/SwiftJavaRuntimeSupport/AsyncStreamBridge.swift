@@ -92,11 +92,11 @@ private func attachSource<Element>(
       do {
         try await iterate { element in
           let environment = try! JavaVirtualMachine.shared().environment()
-          let value = convert(element, environment)
-          JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
-            .next(value.map { JavaObject(javaThis: $0, environment: environment) })
-          if let value {
-            environment.interface.DeleteLocalRef(environment, value)
+          // The frame frees the references made for the element: the value, and the delivery's wrapper.
+          try! environment.withLocalFrame(capacity: 8) {
+            let value = convert(element, environment)
+            JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
+              .next(value.map { JavaObject(javaThis: $0, environment: environment) })
           }
         }
       } catch {
@@ -104,11 +104,12 @@ private func attachSource<Element>(
       }
       let environment = try! JavaVirtualMachine.shared().environment()
       let javaDelivery = JavaSwiftAsyncStreamDelivery(javaThis: delivery, environment: environment)
-      if let failure, !Task.isCancelled, let throwable = environment.makeJavaThrowable(for: failure) {
-        javaDelivery.fail(Throwable(javaThis: throwable, environment: environment))
-        environment.interface.DeleteLocalRef(environment, throwable)
-      } else {
-        javaDelivery.finish(!Task.isCancelled)
+      try! environment.withLocalFrame(capacity: 8) {
+        if let failure, !Task.isCancelled, let throwable = environment.makeJavaThrowable(for: failure) {
+          javaDelivery.fail(Throwable(javaThis: throwable, environment: environment))
+        } else {
+          javaDelivery.finish(!Task.isCancelled)
+        }
       }
       environment.interface.DeleteGlobalRef(environment, delivery)
     }

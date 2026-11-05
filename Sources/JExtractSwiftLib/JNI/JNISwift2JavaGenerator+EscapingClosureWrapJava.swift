@@ -159,6 +159,15 @@ extension JNISwift2JavaGenerator {
     if let nominal = jextractedNominal(type) {
       return nominal.generatedJavaClassMacroName + (isResult ? "!" : "?")
     }
+    // With `kotlinOutput` an optional crosses as a nullable Java object.
+    if !isResult, config.effectiveKotlinOutput, let wrapped = optionalWrapped(type) {
+      if let boxClass = wrapped.javaBoxClassName {
+        return "\(boxClass)?"
+      }
+      if let nominal = jextractedNominal(wrapped) {
+        return "\(nominal.generatedJavaClassMacroName)?"
+      }
+    }
     if !isResult, let nominal = optionalWrapped(type).flatMap(jextractedNominal) {
       return "JavaOptional<\(nominal.generatedJavaClassMacroName)>?"
     }

@@ -457,7 +457,8 @@ extension JNISwift2JavaGenerator {
       let generator = JavaInterfaceProtocolWrapperGenerator(
         asyncFuncMode: config.effectiveAsyncFuncMode,
         foundationTypesAsJavaTypes: config.effectiveFoundationTypesAsJavaTypes,
-        javaImplementableProtocols: Set(protocolWrappers.keys.map(\.swiftNominal.qualifiedName))
+        javaImplementableProtocols: Set(protocolWrappers.keys.map(\.swiftNominal.qualifiedName)),
+        optionalsAsNullable: config.effectiveKotlinOutput
       )
       let syntheticFunction = try generator.generateSyntheticClosureFunction(
         functionType: functionType,
@@ -2028,9 +2029,9 @@ extension JNISwift2JavaGenerator {
           // unless the closure throws. wrap-java doesn't bind a generic `CompletableFuture<T>` result,
           // so `apply` is called dynamically.
           let tryKeyword = fn.isThrowing ? "try" : "try!"
-          // An optional parameter crosses as a `JavaOptional`, which is a `JavaValue` only as an optional.
-          let dynamicArguments = zip(fn.parameters, upcallArguments).map { parameter, argument in
-            if case .nominal(let nominal) = parameter.type, case .optional = nominal.asKnownType {
+          // An optional parameter crossing as a `JavaOptional`, which is a `JavaValue` only as an optional.
+          let dynamicArguments = zip(syntheticFunction.parameterConversions, upcallArguments).map { conversion, argument in
+            if case .toJavaOptional = conversion {
               return "Optional(\(argument))"
             }
             return argument
