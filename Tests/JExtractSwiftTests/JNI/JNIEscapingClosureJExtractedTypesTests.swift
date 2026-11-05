@@ -240,4 +240,40 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  @Test
+  func closureReturningArrayOfJextractedType_returnsJavaObjects() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        #"@JavaClass("com.example.swift.Item")"#,
+        "public func apply(_ _0: String) -> [JavaItem?]",
+        "let arrayElementPointer = UnsafeMutablePointer<Item>(bitPattern: Int(arrayElementMemoryAddress$))!",
+      ]
+    )
+  }
+
+  @Test
+  func closureReturningOptionalArrayOfJextractedType_readsTheJavaOptional() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]?) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        "public func apply(_ _0: String) -> JavaOptional<JavaObject>!",
+        "return Optional(javaOptional: javaInterface_cb$.apply(_0)).map {",
+        "return [JavaItem?](fromJNI: $0.javaThis, in: $0.javaEnvironment).map {",
+      ]
+    )
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]?) {}",
+      .jni,
+      .java,
+      expectedChunks: [
+        "java.util.Optional<Item[]> apply(java.lang.String _0);"
+      ]
+    )
+  }
 }

@@ -104,10 +104,16 @@ extension JNISwift2JavaGenerator {
       }
     }
     // Arrays of jextracted values cross as arrays of their Java objects.
-    if !isResult, case .nominal(let array) = type, case .array(let element) = array.asKnownType,
+    if case .nominal(let array) = type, case .array(let element) = array.asKnownType,
       let nominal = jextractedNominal(element)
     {
       return "[\(nominal.generatedJavaClassMacroName)?]"
+    }
+    // An optional array is returned in a Java `Optional`, which holds the array as an object.
+    if isResult, let wrapped = optionalWrapped(type), case .nominal(let array) = wrapped,
+      case .array(let element) = array.asKnownType, jextractedNominal(element) != nil
+    {
+      return "JavaOptional<JavaObject>!"
     }
     return type.description
   }
