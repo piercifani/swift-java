@@ -36,9 +36,18 @@ extension JNISwift2JavaGenerator {
       do {
         // wrap-java maps `java.net.URI` and the other Foundation Java types on its own terms, so
         // protocols implemented in Java don't pass Foundation values as they are; closures do.
+        let nativeTranslation = NativeJavaTranslation(
+          config: config,
+          javaPackage: self.javaPackage,
+          javaClassLookupTable: self.javaClassLookupTable,
+          knownTypes: SwiftKnownTypes(symbolTable: lookupContext.symbolTable),
+          protocolWrappers: [:],
+          logger: self.logger
+        )
         let translator = JavaInterfaceProtocolWrapperGenerator(
           asyncFuncMode: config.effectiveAsyncFuncMode,
-          optionalsAsNullable: config.effectiveKotlinOutput
+          optionalsAsNullable: config.effectiveKotlinOutput,
+          javaMapObjectBridge: nativeTranslation.javaMapObjectBridge
         )
         wrappers[type] = try translator.generate(for: type)
       } catch {
@@ -123,6 +132,9 @@ extension JNISwift2JavaGenerator {
     var javaImplementableProtocols: Set<String> = []
     /// Optional parameters cross as nullable Java objects (`kotlinOutput`), instead of Java optionals.
     var optionalsAsNullable: Bool = false
+    /// With `dictionariesAsJavaMaps`, the bridge of a dictionary, `Any` or `AnyHashable` (or an optional of one),
+    /// which crosses as the Java object the bridge makes.
+    var javaMapObjectBridge: (SwiftType) throws -> String? = { _ in nil }
 
     private func crossesAsIs(_ type: SwiftType) -> Bool {
       type.isDirectlyTranslatedToWrapJava || (foundationTypesAsJavaTypes && type.isFoundationJavaValue)
@@ -234,6 +246,9 @@ extension JNISwift2JavaGenerator {
         throw JavaTranslationError.unsupportedSwiftType(.function(closure))
       }
       func argumentConversion(_ type: SwiftType) throws -> String {
+        if let bridge = try javaMapObjectBridge(type) {
+          return "\(bridge).fromJavaObject(%ARG%, in: environment)"
+        }
         guard case .nominal(let nominal) = type else {
           throw JavaTranslationError.unsupportedSwiftType(type)
         }
@@ -299,6 +314,9 @@ extension JNISwift2JavaGenerator {
 
       if crossesAsIs(type) {
         return .placeholder
+      }
+      if let bridge = try javaMapObjectBridge(type) {
+        return .bridgedToJava(.placeholder, bridge: bridge)
       }
       if type.isSwiftError {
         return .toJavaThrowable(.placeholder)
@@ -397,6 +415,9 @@ extension JNISwift2JavaGenerator {
     ) throws -> UpcallConversionStep {
       if crossesAsIs(type) {
         return .placeholder
+      }
+      if let bridge = try javaMapObjectBridge(type) {
+        return .bridgedFromJava(.placeholder, bridge: bridge)
       }
 
       switch type {
@@ -528,6 +549,12 @@ enum UpcallConversionStep {
   /// A Swift error as SwiftJava's `Throwable`.
   indirect case toJavaThrowable(UpcallConversionStep)
 
+  /// A Swift value as the SwiftJava wrapper of the Java object `bridge` makes of it, `nil` for `null`.
+  indirect case bridgedToJava(UpcallConversionStep, bridge: String)
+
+  /// A SwiftJava wrapper as the Swift value `bridge` makes of its Java object.
+  indirect case bridgedFromJava(UpcallConversionStep, bridge: String)
+
   indirect case fromJavaOptional(UpcallConversionStep)
 
   indirect case map(UpcallConversionStep, body: UpcallConversionStep)
@@ -609,6 +636,14 @@ enum UpcallConversionStep {
     case .toJavaThrowable(let inner):
       let inner = inner.render(&printer, placeholder)
       return "_makeThrowable(for: \(inner))"
+
+    case .bridgedToJava(let inner, let bridge):
+      let inner = inner.render(&printer, placeholder)
+      return "_javaObjectWrapper(\(inner), bridge: \(bridge).self)"
+
+    case .bridgedFromJava(let inner, let bridge):
+      let inner = inner.render(&printer, placeholder)
+      return "_swiftValue(of: \(inner), bridge: \(bridge).self)"
 
     case .fromJavaOptional(let inner):
       let inner = inner.render(&printer, placeholder)
