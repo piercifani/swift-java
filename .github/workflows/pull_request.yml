@@ -317,7 +317,6 @@ jobs:
           'SwiftJavaExtractFFMSampleApp',
           'SwiftJavaExtractJNISampleApp',
           'SwiftJavaExtractJNIKotlinSampleApp',
-          'SwiftJavaExtractJNIAppShapes',  # macOS only: it uses Combine
         ]
     steps:
       - uses: actions/checkout@v7

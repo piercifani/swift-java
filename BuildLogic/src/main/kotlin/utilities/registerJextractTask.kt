@@ -79,7 +79,6 @@ fun Project.registerJextractTask(
         }
 
         workingDir = layout.projectDirectory.asFile
-        environment(SWIFT_JAVA_BUILD, "1")
         commandLine("swift")
         // FIXME: disable prebuilts until swift-syntax isn't broken on 6.2 anymore: https://github.com/swiftlang/swift-java/issues/418
         args(arguments()) // since Swift targets which need to be jextract-ed have the jextract build plugin, we just need to build

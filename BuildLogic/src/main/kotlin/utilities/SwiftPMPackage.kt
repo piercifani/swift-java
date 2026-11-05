@@ -30,14 +30,7 @@ internal fun Project.swiftPMPackage(): SwiftPMPackage {
     serviceOf<ExecOperations>().exec {
         workingDir(projectDir)
         commandLine("swift", "package", "describe", "--type", "json")
-        environment(SWIFT_JAVA_BUILD, "1")
         standardOutput = stdout
     }
     return json.decodeFromString<SwiftPMPackage>(stdout.toString())
 }
-
-/**
- * Set for the Swift builds Gradle runs. A package shared with Apple platforms can add the SwiftJava
- * dependency and the JExtractSwiftPlugin only when it's set, as swiftlang/swift-java#694 describes.
- */
-internal const val SWIFT_JAVA_BUILD = "SWIFT_JAVA_BUILD"
