@@ -530,6 +530,17 @@ extension JNISwift2JavaGenerator {
       let discriminatorName = "\(parameterName)_discriminator"
       let valueName = "\(parameterName)_value"
 
+      // An optional array crosses as the array, or `null` for `nil`.
+      if case .nominal(let nominalType) = swiftType, case .array(let elementType) = nominalType.asKnownType {
+        let array = try translateArrayParameter(elementType: elementType, parameterName: parameterName)
+        return NativeParameter(
+          parameters: array.parameters,
+          conversion: .optionalMap(array.conversion),
+          indirectConversion: array.indirectConversion,
+          conversionCheck: array.conversionCheck
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.name
