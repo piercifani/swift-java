@@ -304,20 +304,6 @@ struct JNIEscapingClosureJExtractedTypesTests {
     )
   }
 
-  /// `JavaOptional` holds a Java object, which an array isn't: the function is skipped.
-  @Test
-  func closureReturningOptionalArray_isSkipped() throws {
-    try assertOutput(
-      input: itemSource + "\npublic func provide(_ cb: @escaping (String) -> [Item]?) {}",
-      .jni,
-      .swift,
-      expectedChunks: [],
-      notExpectedChunks: [
-        "Java_com_example_swift_SwiftModule__00024provide"
-      ]
-    )
-  }
-
   /// `toJavaOptional()` needs a Java object, which an array isn't: the function is skipped.
   @Test
   func closureTakingOptionalArray_isSkipped() throws {
@@ -328,6 +314,42 @@ struct JNIEscapingClosureJExtractedTypesTests {
       expectedChunks: [],
       notExpectedChunks: [
         "Java_com_example_swift_SwiftModule__00024onSelect"
+      ]
+    )
+  }
+
+  @Test
+  func closureReturningArrayOfJextractedType_returnsJavaObjects() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        #"@JavaClass("com.example.swift.Item")"#,
+        "public func apply(_ _0: String) -> [JavaItem?]",
+        "let arrayElementPointer = UnsafeMutablePointer<Item>(bitPattern: Int(arrayElementMemoryAddress$))!",
+      ]
+    )
+  }
+
+  @Test
+  func closureReturningOptionalArrayOfJextractedType_readsTheJavaOptional() throws {
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]?) {}",
+      .jni,
+      .swift,
+      expectedChunks: [
+        "public func apply(_ _0: String) -> JavaOptional<JavaObject>!",
+        "return Optional(javaOptional: javaInterface_cb$.apply(_0)).map {",
+        "return [JavaItem?](fromJNI: $0.javaThis, in: $0.javaEnvironment).map {",
+      ]
+    )
+    try assertOutput(
+      input: itemSource + "\npublic func setSeeds(_ cb: @escaping (String) -> [Item]?) {}",
+      .jni,
+      .java,
+      expectedChunks: [
+        "java.util.Optional<Item[]> apply(java.lang.String _0);"
       ]
     )
   }

@@ -414,9 +414,18 @@ extension JNISwift2JavaGenerator {
     }
 
     private func translateOptionalResult(wrappedType: SwiftType, methodName: String) throws -> UpcallConversionStep {
-      // `JavaOptional` holds a Java object; an array isn't one.
-      if case .nominal(let nominal) = wrappedType, case .array = nominal.asKnownType {
-        throw JavaTranslationError.unsupportedSwiftType(wrappedType)
+      // The Java `Optional` holds an array as an object: read it back as an array of the elements' Java objects.
+      if case .nominal(let nominal) = wrappedType, case .array(let element) = nominal.asKnownType {
+        guard case .nominal(let elementType) = element, elementType.nominalTypeDecl.knownTypeKind == nil,
+          case .map(_, let elementConversion) = try translateArrayResult(elementType: element)
+        else {
+          throw JavaTranslationError.unsupportedSwiftType(wrappedType)
+        }
+        let javaArray = UpcallConversionStep.javaObjectArray(
+          .placeholder,
+          elementJavaClass: elementType.nominalTypeDecl.generatedJavaClassMacroName
+        )
+        return .map(.fromJavaOptional(.placeholder), body: .map(javaArray, body: elementConversion))
       }
       // The `fromJavaOptional` will handle the nullability
       let wrappedConversion = try translateResult(
@@ -460,6 +469,10 @@ enum UpcallConversionStep {
   indirect case fromJavaOptional(UpcallConversionStep)
 
   indirect case map(UpcallConversionStep, body: UpcallConversionStep)
+
+  /// A Java array held as a plain Java object, as the Swift array of its elements' Java objects.
+  indirect case javaObjectArray(UpcallConversionStep, elementJavaClass: String)
+
 
   /// Returns the conversion string applied to the placeholder.
   func render(_ printer: inout SwiftPrinter, _ placeholder: String) -> String {
@@ -519,6 +532,10 @@ enum UpcallConversionStep {
     case .fromJavaOptional(let inner):
       let inner = inner.render(&printer, placeholder)
       return "Optional(javaOptional: \(inner))"
+
+    case .javaObjectArray(let inner, let elementJavaClass):
+      let inner = inner.render(&printer, placeholder)
+      return "[\(elementJavaClass)?](fromJNI: \(inner).javaThis, in: \(inner).javaEnvironment)"
 
     case .map(let inner, let body):
       let inner = inner.render(&printer, placeholder)
