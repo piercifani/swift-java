@@ -152,8 +152,9 @@ extension JNISwift2JavaGenerator {
       return "JavaOptional<Throwable>?"
     }
     // A Java object implementing a protocol, which Swift checks for a Swift instance or a Java implementation.
-    if isResult, case .existential = type {
-      return "JavaObject!"
+    // Its Java type is the protocol's interface, which the Java method's signature names.
+    if isResult, case .existential(let protocolType) = type, let protocolDecl = protocolType.asNominalTypeDeclaration {
+      return "\(protocolDecl.javaInterfaceName)!"
     }
     if let nominal = jextractedNominal(type) {
       return nominal.generatedJavaClassMacroName + (isResult ? "!" : "?")

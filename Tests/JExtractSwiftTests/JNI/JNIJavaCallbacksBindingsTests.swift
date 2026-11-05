@@ -89,7 +89,7 @@ struct JNIJavaCallbacksBindingsTests {
       detectChunkByInitialLines: 1,
       expectedChunks: [
         "final class SwiftJavaObserverImplementation: SwiftJavaObserverWrapper, @unchecked Sendable {",
-        "public func apply(_ _0: String) -> JavaObject!",
+        "public func apply(_ _0: String) -> JavaObserver!",
         "if let instance$ = unwrapped$.as(JavaJNISwiftInstance.self) {",
         "existential$ = SwiftJavaObserverImplementation(_javaObserverInterface: JavaObserver(javaThis: unwrapped$.javaThis, environment: unwrapped$.javaEnvironment))",
       ]
