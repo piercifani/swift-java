@@ -11,18 +11,20 @@ import PackageDescription
 // all of it, and that the Java and Swift it generates compile. Shapes jextract doesn't handle yet are
 // marked `@JavaExport(false)` with a `// Gap:` comment.
 
-let jextractedModule: [Target.Dependency] = [
-  .product(name: "SwiftJava", package: "swift-java"),
-  .product(name: "SwiftJavaAnnotations", package: "swift-java"),
-]
+// Apple builds use only the JNI-free `@JavaExport` markers. Android (and the Gradle build that runs the
+// Kotlin tests) sets `SWIFT_JAVA_BUILD`, which adds swift-java and the jextract plugin, as
+// swiftlang/swift-java#694 describes.
+let isSwiftJavaBuild = Context.environment["SWIFT_JAVA_BUILD"] != nil
 
 func module(_ name: String, dependencies: [Target.Dependency] = []) -> Target {
   .target(
     name: name,
-    dependencies: jextractedModule + dependencies,
+    dependencies: [.product(name: "SwiftJavaAnnotations", package: "swift-java")]
+      + (isSwiftJavaBuild ? [.product(name: "SwiftJava", package: "swift-java")] : [])
+      + dependencies,
     exclude: ["swift-java.config"],
     swiftSettings: [.swiftLanguageMode(.v6)],
-    plugins: [.plugin(name: "JExtractSwiftPlugin", package: "swift-java")]
+    plugins: isSwiftJavaBuild ? [.plugin(name: "JExtractSwiftPlugin", package: "swift-java")] : []
   )
 }
 

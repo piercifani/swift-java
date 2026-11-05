@@ -10,12 +10,15 @@ compiles the generated Java and runs the Kotlin tests in `src/test/kotlin`. Ever
 `failOnSkippedDeclarations`, so the build fails when jextract skips anything it didn't before.
 
 ```bash
-swift build --disable-experimental-prebuilts --disable-sandbox
+SWIFT_JAVA_BUILD=1 swift build --disable-experimental-prebuilts --disable-sandbox
 ./gradlew test   # from the repository root: ./gradlew :Samples:SwiftJavaExtractJNIAppShapes:test
 ```
 
-The modules also build for iOS (`ci-validate.sh` checks it), as an app sharing them with iOS needs. The
-tests run on macOS only: it uses Combine (an app on Android uses an implementation of the same API, such as
+As in [swiftlang/swift-java#694](https://github.com/swiftlang/swift-java/issues/694), swift-java and the
+jextract plugin take part only in builds that set `SWIFT_JAVA_BUILD` (Android, and the Gradle build of
+the tests, which sets it). Apple builds depend only on the JNI-free `SwiftJavaAnnotations`, for the
+`@JavaExport` markers; `ci-validate.sh` also builds the modules for iOS that way. The tests run on
+macOS only: the package uses Combine (an app on Android uses an implementation of the same API, such as
 OpenCombine) and runs main-actor tests on the process's first thread (`-XstartOnFirstThread`).
 
 ## Modules
