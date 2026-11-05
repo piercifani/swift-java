@@ -174,6 +174,11 @@ final class SwiftAnalysisVisitor {
     }
 
     guard !constraints.isEmpty else {
+      if extractedNominalType.swiftNominal.kind == .protocol {
+        extractedNominalType.protocolExtensionMembers.formUnion(
+          node.memberBlock.members.flatMap { protocolExtensionMemberNames($0.decl) }
+        )
+      }
       // The extension is unconstrained: add to the base type (visible through all specializations)
       extractedNominalType.inheritedTypes +=
         node.inheritanceClause?.inheritedTypes.compactMap {
@@ -999,4 +1004,18 @@ extension DeclSyntaxProtocol where Self: WithModifiersSyntax & WithAttributesSyn
   ) -> Bool {
     decider.shouldExtract(decl: DeclSyntax(self), in: parent)
   }
+}
+
+/// How `ExtractedNominalType.protocolExtensionMembers` names a protocol extension's member.
+private func protocolExtensionMemberNames(_ decl: DeclSyntax) -> [String] {
+  if let variable = decl.as(VariableDeclSyntax.self) {
+    return variable.bindings.compactMap { $0.pattern.as(IdentifierPatternSyntax.self)?.identifier.text }
+  }
+  if let function = decl.as(FunctionDeclSyntax.self) {
+    let labels = function.signature.parameterClause.parameters.map {
+      ($0.firstName.tokenKind == .wildcard ? "_" : $0.firstName.text) + ":"
+    }
+    return ["\(function.name.text)(\(labels.joined()))"]
+  }
+  return []
 }

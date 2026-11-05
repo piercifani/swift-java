@@ -281,8 +281,13 @@ extension JNISwift2JavaGenerator {
     if isProtocolExtensionMember(member) {
       return true
     }
-    let key = protocolMemberKey(member)
-    return (type.methods + type.variables).contains { isProtocolExtensionMember($0) && protocolMemberKey($0) == key }
+    // The extension may not be exported itself.
+    let name =
+      switch member.apiKind {
+      case .getter, .setter, .subscriptGetter, .subscriptSetter: member.name
+      default: "\(member.name)(\(member.functionSignature.parameters.map { ($0.argumentLabel ?? "_") + ":" }.joined()))"
+      }
+    return type.protocolExtensionMembers.contains(name)
   }
 
   /// For a method of a concrete type that implements a requirement of a protocol the type conforms to,

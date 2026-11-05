@@ -54,6 +54,9 @@ public final class ExtractedNominalType: ExtractedSwiftDecl {
   public var methods: [ExtractedFunc] = []
   public var variables: [ExtractedFunc] = []
   public var cases: [ExtractedEnumCase] = []
+  /// For a protocol, the members its extensions implement, exported or not: `name` for a property,
+  /// `name(label:)` for a method.
+  public var protocolExtensionMembers: Set<String> = []
   public var inheritedTypes: [SwiftType]
   public var parent: SwiftNominalTypeDeclaration?
 
