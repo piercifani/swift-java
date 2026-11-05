@@ -49,6 +49,17 @@ public final class ExtractedNominalType: ExtractedSwiftDecl {
     self.swiftNominal.sourceFilePath
   }
 
+  /// The file whose `+SwiftJava.swift` output holds this type's thunks: the one declaring it or, for a
+  /// type another module declares, the first file in `swiftModuleName` that extends it. A build expects
+  /// one output per input file of `swiftModuleName`, so a name from another module would not be built.
+  public func thunkSourceFilePath(swiftModuleName: String) -> String {
+    guard swiftNominal.moduleName != swiftModuleName else {
+      return sourceFilePath
+    }
+    let members = initializers + methods + variables
+    return members.lazy.compactMap(\.sourceFilePath).first ?? sourceFilePath
+  }
+
   // Backing storage for member collections
   public var initializers: [ExtractedFunc] = []
   public var methods: [ExtractedFunc] = []

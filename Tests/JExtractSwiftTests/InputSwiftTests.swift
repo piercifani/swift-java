@@ -105,3 +105,52 @@ struct InputSwiftTests {
     }
   }
 }
+
+extension InputSwiftTests {
+  /// An extension of a dependency module's type, in a file named after neither: its thunks go in that
+  /// file's output, the one a build expects, not in one named after the dependency's file.
+  @Test(arguments: [JExtractGenerationMode.jni, .ffm])
+  func extensionOfDependencyType(mode: JExtractGenerationMode) throws {
+    let tempDirectory: URL = fileManager.temporaryDirectory
+      .appending(path: "extensionOfDependencyType-\(UUID())")
+    let dependencyDirectory = tempDirectory.appending(path: "DependencyLib")
+    let inputDirectory = tempDirectory.appending(path: "PrimaryLib")
+    let outSwiftURL = tempDirectory.appending(path: "swift")
+    try fileManager.createDirectory(at: dependencyDirectory, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+    try """
+    public struct Payload {
+      public let value: Int32
+      public init(value: Int32) { self.value = value }
+    }
+    """.write(to: dependencyDirectory.appending(path: "Payload.swift"), atomically: true, encoding: .utf8)
+    try """
+    import DependencyLib
+
+    extension Payload {
+      public func doubled() -> Int32 { value * 2 }
+    }
+    """.write(to: inputDirectory.appending(path: "Payload+Doubling.swift"), atomically: true, encoding: .utf8)
+
+    var dependency = Configuration()
+    dependency.javaPackage = "com.example.dep"
+    var config = Configuration()
+    config.mode = mode
+    config.javaPackage = "com.example"
+    config.inputSwiftDirectory = inputDirectory.path()
+    config.swiftModule = "PrimaryLib"
+    config.outputSwiftDirectory = outSwiftURL.path()
+    config.outputJavaDirectory = tempDirectory.appending(path: "java").path()
+
+    try SwiftToJava(
+      config: config,
+      dependencyConfigs: [
+        DependencyConfig(swiftModuleName: "DependencyLib", configuration: dependency, swiftSourcePaths: [dependencyDirectory])
+      ]
+    ).run()
+
+    let thunks = try String(contentsOf: outSwiftURL.appending(path: "Payload+Doubling+SwiftJava.swift"), encoding: .utf8)
+    #expect(thunks.contains("doubled"))
+    #expect(!fileManager.fileExists(atPath: outSwiftURL.appending(path: "Payload+SwiftJava.swift").path()))
+  }
+}
