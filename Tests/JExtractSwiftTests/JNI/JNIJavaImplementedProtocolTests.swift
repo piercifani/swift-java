@@ -75,6 +75,8 @@ struct JNIJavaImplementedProtocolTests {
     )
   }
 
+  /// A requirement Swift can't call on a Java implementation stops with an error, and doesn't keep Java
+  /// from implementing the others.
   @Test
   func asyncRequirement_needsCompletableFutureMode() throws {
     var config = self.config
@@ -85,15 +87,15 @@ struct JNIJavaImplementedProtocolTests {
       .jni,
       .swift,
       detectChunkByInitialLines: 1,
-      expectedChunks: [],
-      notExpectedChunks: [
-        "public protocol SwiftJavaProfileClientWrapper"
+      expectedChunks: [
+        "public protocol SwiftJavaProfileClientWrapper",
+        #"fatalError("ProfileClient.fetch can't be called on a Java implementation yet")"#,
       ]
     )
   }
 
   @Test
-  func asyncRequirement_unsupportedResultSkipsTheWrapper() throws {
+  func asyncRequirement_unsupportedResultStopsWithAnError() throws {
     try assertOutput(
       input: """
         public struct Profile {}
@@ -105,9 +107,9 @@ struct JNIJavaImplementedProtocolTests {
       .jni,
       .swift,
       detectChunkByInitialLines: 1,
-      expectedChunks: [],
-      notExpectedChunks: [
-        "public protocol SwiftJavaProfileClientWrapper"
+      expectedChunks: [
+        "public protocol SwiftJavaProfileClientWrapper",
+        #"fatalError("ProfileClient.fetchAll can't be called on a Java implementation yet")"#,
       ]
     )
   }

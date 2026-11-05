@@ -212,8 +212,8 @@ extension JNISwift2JavaGenerator {
       // doesn't implement.
       let isJavaImplementable = self.interfaceProtocolWrappers.keys.contains(decl)
       for requirement in self.supportedProtocolRequirements(of: decl) {
-        if !isJavaImplementable, self.hasProtocolExtensionImplementation(requirement, in: decl) {
-          printProtocolDefaultMethod(&printer, decl, requirement)
+        if self.hasProtocolExtensionImplementation(requirement, in: decl) {
+          printProtocolDefaultMethod(&printer, decl, requirement, isJavaImplementable: isJavaImplementable)
         } else {
           printFunctionDowncallMethods(&printer, requirement, skipMethodBody: true)
         }
@@ -224,11 +224,14 @@ extension JNISwift2JavaGenerator {
 
   /// A protocol member implemented in a protocol extension is a `default` method that calls the Swift
   /// implementation through the existential box, so the classes of conforming Swift types, which don't
-  /// declare the member themselves, still implement the interface.
+  /// declare the member themselves, still implement the interface. An interface Java can implement doesn't
+  /// extend `JNISwiftInstance`: the method works on Swift values, and a Java implementation overrides it
+  /// to call it from Java.
   private func printProtocolDefaultMethod(
     _ printer: inout JavaPrinter,
     _ decl: ExtractedNominalType,
-    _ member: ExtractedFunc
+    _ member: ExtractedFunc,
+    isJavaImplementable: Bool
   ) {
     // Translated like the box's method (`printExistentialBoxMethod`), whose native method it calls.
     guard var translated = try? self.javaTranslator.translate(member) else {
@@ -237,7 +240,13 @@ extension JNISwift2JavaGenerator {
     translated.parentName = SwiftQualifiedTypeName(decl.swiftNominal.javaExistentialBoxName)
 
     printer.printSeparator(member.displayName)
-    printJavaBindingWrapperMethod(&printer, translated, importedFunc: member, skipMethodBody: false, isInterfaceDefault: true)
+    var method = JavaPrinter()
+    printJavaBindingWrapperMethod(&method, translated, importedFunc: member, skipMethodBody: false, isInterfaceDefault: true)
+    var rendered = method.finalize()
+    if isJavaImplementable {
+      rendered = rendered.replacingOccurrences(of: "this.$", with: "((JNISwiftInstance) this).$")
+    }
+    printer.print(rendered)
   }
 
   /// Prints the full `.java` file for a protocol's existential box — the
