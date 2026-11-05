@@ -25,7 +25,7 @@ extension JNISwift2JavaGenerator {
   ) -> [ExtractedNominalType: JavaInterfaceSwiftWrapper] {
     var wrappers = [ExtractedNominalType: JavaInterfaceSwiftWrapper]()
 
-    for type in types where type.swiftNominal.kind == .protocol {
+    for type in types where type.swiftNominal.kind == .protocol && type.swiftNominal.canBeImplementedInJava {
       // Skip protocols that have a known representative concrete type (e.g. DataProtocol).
       if let knownKind = type.swiftNominal.knownTypeKind,
         SwiftKnownTypes.representativeType(of: knownKind) != nil
@@ -672,5 +672,20 @@ extension SwiftType {
     case .genericParameter, .function, .metatype, .tuple, .existential, .opaque, .composite, .inlineArray:
       return false
     }
+  }
+}
+
+extension SwiftNominalTypeDeclaration {
+  /// Whether a Java class can implement this protocol: not if it refines a standard library protocol
+  /// with requirements Java can't implement, such as `Encodable` or `Hashable`. Read from its declaration,
+  /// so that modules depending on its module tell the same.
+  var canBeImplementedInJava: Bool {
+    let unimplementable: Set<String> = [
+      "Encodable", "Decodable", "Codable", "Hashable", "Equatable", "Comparable", "Identifiable",
+      "CustomStringConvertible", "CustomDebugStringConvertible", "Error", "LocalizedError", "RawRepresentable",
+      "CaseIterable", "Sequence", "Collection", "AsyncSequence", "Actor",
+    ]
+    let inherited = syntax.inheritanceClause?.inheritedTypes.map { $0.type.trimmedDescription } ?? []
+    return !inherited.contains { unimplementable.contains($0) || unimplementable.contains($0.split(separator: ".").last.map(String.init) ?? "") }
   }
 }

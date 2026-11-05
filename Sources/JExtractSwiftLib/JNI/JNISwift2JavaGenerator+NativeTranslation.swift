@@ -575,7 +575,8 @@ extension JNISwift2JavaGenerator {
       // Swift wrappers for all the protocol types.
       let allowsJavaImplementations = protocolTypes.allSatisfy { protocolType in
         self.protocolWrappers.contains(where: { $0.value.protocolType == protocolType })
-          || javaCallbackModules.contains(protocolType.nominalTypeDecl.moduleName)
+          || (javaCallbackModules.contains(protocolType.nominalTypeDecl.moduleName)
+            && protocolType.nominalTypeDecl.canBeImplementedInJava)
       }
 
       return NativeParameter(

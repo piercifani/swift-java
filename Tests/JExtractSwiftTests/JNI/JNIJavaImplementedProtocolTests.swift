@@ -171,6 +171,25 @@ struct JNIJavaImplementedProtocolTests {
     )
   }
 
+  /// A protocol refining one Java can't implement, such as `Encodable`, is implemented only by Swift values.
+  @Test
+  func protocolRefiningEncodable_isNotImplementedInJava() throws {
+    try assertOutput(
+      input: """
+        public protocol Host: Encodable {
+          func name() -> String
+        }
+        public func use(host: any Host) {}
+        """,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [],
+      notExpectedChunks: ["SwiftJavaHostWrapper", "SwiftJavaHostImplementation", "_SwiftModule_use_host_Wrapper"]
+    )
+  }
+
   // MARK: Protocols from other modules
 
   let crossModuleSource = """

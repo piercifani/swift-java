@@ -715,7 +715,9 @@ extension JNISwift2JavaGenerator {
         if let importedType = self.asExtractedNominalTypeDecl(protocolType), self.interfaceProtocolWrappers[importedType] != nil {
           return nominal
         }
-        if nominal.moduleName != swiftModuleName, javaCallbackModules.contains(nominal.moduleName) {
+        if nominal.moduleName != swiftModuleName, javaCallbackModules.contains(nominal.moduleName),
+          nominal.canBeImplementedInJava
+        {
           return nominal
         }
         return nil
