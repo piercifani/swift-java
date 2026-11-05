@@ -209,7 +209,15 @@ public struct Configuration: Codable {
   /// Only supported in `jni` mode.
   public var optionalsAsNullable: Bool?
   public var effectiveOptionalsAsNullable: Bool {
-    optionalsAsNullable ?? false
+    optionalsAsNullable ?? effectiveKotlinOutput
+  }
+
+  /// If true, the generated Java is shaped for Kotlin, which it's then meant to be used from: optionals are
+  /// nullable everywhere, closures implemented in Kotlin included. Implies `optionalsAsNullable`. Only
+  /// supported in `jni` mode.
+  public var kotlinOutput: Bool?
+  public var effectiveKotlinOutput: Bool {
+    kotlinOutput ?? false
   }
 
   /// Fully qualified name of a Java annotation marking parameters and results that can be `null`, such as

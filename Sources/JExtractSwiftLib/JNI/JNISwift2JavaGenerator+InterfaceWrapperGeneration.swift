@@ -36,7 +36,10 @@ extension JNISwift2JavaGenerator {
       do {
         // wrap-java maps `java.net.URI` and the other Foundation Java types on its own terms, so
         // protocols implemented in Java don't pass Foundation values as they are; closures do.
-        let translator = JavaInterfaceProtocolWrapperGenerator(asyncFuncMode: config.effectiveAsyncFuncMode)
+        let translator = JavaInterfaceProtocolWrapperGenerator(
+          asyncFuncMode: config.effectiveAsyncFuncMode,
+          optionalsAsNullable: config.effectiveKotlinOutput
+        )
         wrappers[type] = try translator.generate(for: type)
       } catch {
         self.logger.warning("Failed to generate protocol wrapper for: '\(type.swiftNominal.qualifiedName)'; \(error)")
@@ -118,6 +121,8 @@ extension JNISwift2JavaGenerator {
     /// Protocols Java can implement (`enableJavaCallbacks`), by qualified name: a closure implemented in
     /// Java can return one of them, implemented in Java or in Swift.
     var javaImplementableProtocols: Set<String> = []
+    /// Optional parameters cross as nullable Java objects (`kotlinOutput`), instead of Java optionals.
+    var optionalsAsNullable: Bool = false
 
     private func crossesAsIs(_ type: SwiftType) -> Bool {
       type.isDirectlyTranslatedToWrapJava || (foundationTypesAsJavaTypes && type.isFoundationJavaValue)
@@ -332,6 +337,12 @@ extension JNISwift2JavaGenerator {
       if case .nominal(let nominal) = wrappedType, case .array = nominal.asKnownType {
         throw JavaTranslationError.unsupportedSwiftType(wrappedType)
       }
+      if optionalsAsNullable {
+        if let boxClass = wrappedType.javaBoxClassName {
+          return .map(.placeholder, body: .boxed(.placeholder, javaClass: boxClass))
+        }
+        return .flatMap(.placeholder, body: try translateParameter(parameterName: name, type: wrappedType))
+      }
       let wrappedConversion = try translateParameter(parameterName: name, type: wrappedType)
       return .toJavaOptional(.map(.placeholder, body: wrappedConversion))
     }
@@ -482,6 +493,11 @@ enum UpcallConversionStep {
 
   indirect case map(UpcallConversionStep, body: UpcallConversionStep)
 
+  indirect case flatMap(UpcallConversionStep, body: UpcallConversionStep)
+
+  /// A string or number as its boxed Java object, such as `JavaLong`.
+  indirect case boxed(UpcallConversionStep, javaClass: String)
+
   /// A Java array held as a plain Java object, as the Swift array of its elements' Java objects.
   indirect case javaObjectArray(UpcallConversionStep, elementJavaClass: String)
 
@@ -573,6 +589,18 @@ enum UpcallConversionStep {
       let inner = inner.render(&printer, placeholder)
       return "[\(elementJavaClass)?](fromJNI: \(inner).javaThis, in: \(inner).javaEnvironment)"
 
+    case .boxed(let inner, let javaClass):
+      return "\(javaClass)(\(inner.render(&printer, placeholder)))"
+
+    case .flatMap(let inner, let body):
+      let inner = inner.render(&printer, placeholder)
+      var printer = SwiftPrinter()
+      printer.printBraceBlock("\(inner).flatMap") { printer in
+        let body = body.render(&printer, "$0")
+        printer.print("return \(body)")
+      }
+      return printer.finalize()
+
     case .map(let inner, let body):
       let inner = inner.render(&printer, placeholder)
       var printer = SwiftPrinter()
@@ -586,6 +614,21 @@ enum UpcallConversionStep {
 }
 
 extension SwiftType {
+  /// The SwiftJava class of the boxed Java object for a string or number, which a nullable one crosses as.
+  var javaBoxClassName: String? {
+    guard case .nominal(let nominal) = self else {
+      return nil
+    }
+    switch nominal.nominalTypeDecl.knownTypeKind {
+    case .string: return "JavaString"
+    case .int64: return "JavaLong"
+    case .int32: return "JavaInteger"
+    case .double: return "JavaDouble"
+    case .bool: return "JavaBoolean"
+    default: return nil
+    }
+  }
+
   /// A Foundation value that conforms to `JavaValue` in SwiftJavaRuntimeSupport, used with `foundationTypesAsJavaTypes`
   var isFoundationJavaValue: Bool {
     guard case .nominal(let nominal) = self, let kind = nominal.nominalTypeDecl.knownTypeKind else {

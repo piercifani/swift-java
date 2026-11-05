@@ -234,13 +234,34 @@ extension JNISwift2JavaGenerator {
           nil
         }
 
-      return TranslatedEnumCase(
+      var parameters = parameterResults.map(\.parameter)
+      var nullableValueGetters: [String?] = []
+      if config.effectiveKotlinOutput {
+        for (idx, parameter) in enumCase.parameters.enumerated() {
+          guard JavaTranslation.isOptional(parameter.type),
+            case .concrete(let optionalType) = parameters[idx].type,
+            let (wrapped, getter) = nullableType(ofOptional: optionalType)
+          else {
+            nullableValueGetters.append(nil)
+            continue
+          }
+          // Qualified: a case named `string` makes a record `String`, which shadows `java.lang.String`.
+          let type: JavaType =
+            if case .class(nil, "String", []) = wrapped { .class(package: "java.lang", name: "String") } else { wrapped }
+          parameters[idx] = JavaParameter(name: parameters[idx].name, type: type)
+          nullableValueGetters.append(getter)
+        }
+      }
+
+      var translated = TranslatedEnumCase(
         name: javaCaseClassName,
         original: enumCase,
-        parameters: parameterResults.map(\.parameter),
+        parameters: parameters,
         getAsCaseFunction: getAsCaseFunction,
         requiresSwiftArena: parameterResults.contains(where: \.requiresSwiftArena)
       )
+      translated.nullableValueGetters = nullableValueGetters
+      return translated
     }
 
     func translate(_ decl: ExtractedFunc) throws -> TranslatedFunctionDecl {
@@ -268,8 +289,16 @@ extension JNISwift2JavaGenerator {
           SwiftQualifiedTypeName(swiftModuleName)
         }
 
-      // Name.
-      let javaName = javaIdentifiers.makeJavaMethodName(decl)
+      // Name. With `kotlinOutput`, an async function's future-returning method is `<name>Async`, and the
+      // generated Kotlin's `suspend fun <name>` awaits it: Kotlin calls a member before an extension.
+      var javaName = javaIdentifiers.makeJavaMethodName(decl)
+      if config.effectiveKotlinOutput, decl.functionSignature.isAsync, config.effectiveAsyncFuncMode == .completableFuture {
+        javaName += "Async"
+      }
+      // Likewise a function returning an `AsyncStream` is `<name>Stream`, and Kotlin's `<name>` returns a `Flow`.
+      if config.effectiveKotlinOutput, Self.asyncStreamElementType(decl.functionSignature.result.type) != nil {
+        javaName += "Stream"
+      }
 
       // A function returning `AsyncStream<T>` or `AsyncThrowingStream<T, _>` is translated as returning `T`, then converted to a stream.
       var resultSignature = decl.functionSignature
@@ -467,17 +496,20 @@ extension JNISwift2JavaGenerator {
 
       for (i, param) in swiftType.parameters.enumerated() {
         let paramName = (param.parameterName ?? "_\(i)").javaSafeIdentifier
-        translatedParams.append(
-          try translateParameter(
-            swiftType: param.type,
-            parameterName: paramName,
-            methodName: name,
-            parentName: parentName,
-            genericParameters: [],
-            genericRequirements: [],
-            parameterPosition: nil,
-          )
+        var translatedParam = try translateParameter(
+          swiftType: param.type,
+          parameterName: paramName,
+          methodName: name,
+          parentName: parentName,
+          genericParameters: [],
+          genericRequirements: [],
+          parameterPosition: nil,
         )
+        // Kotlin implements the closure with nullable parameters, `String?` instead of `Optional<String>`.
+        if config.effectiveKotlinOutput, Self.isOptional(param.type) {
+          translatedParam = nullable(translatedParam)
+        }
+        translatedParams.append(translatedParam)
       }
 
       var translatedResult = try translateResult(swiftType: swiftType.resultType, methodName: name)
@@ -2239,6 +2271,10 @@ extension JNISwift2JavaGenerator {
 
     /// Returns whether the associated values require an arena
     let requiresSwiftArena: Bool
+
+    /// With `kotlinOutput`, for each optional associated value, the method that reads its Java optional:
+    /// the case's record holds the value, or `null`.
+    var nullableValueGetters: [String?] = []
   }
 
   struct TranslatedFunctionDecl {

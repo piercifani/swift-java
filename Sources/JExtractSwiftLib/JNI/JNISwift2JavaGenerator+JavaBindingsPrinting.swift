@@ -68,6 +68,10 @@ extension JNISwift2JavaGenerator {
       try writeGeneratedFile(&printer, filename: filename, displayName: self.swiftModuleName, into: &exportedFileNames)
     }
 
+    if config.effectiveKotlinOutput, config.singleType == nil, let filename = printKotlinFile(&printer) {
+      try writeGeneratedFile(&printer, filename: filename, displayName: filename, into: &exportedFileNames)
+    }
+
     // Print "`PBox`" Java class for any protocol returned as `any P` / `some P`.
     for protocolType in self.existentialProtocolBoxes {
       let filename = printExistentialBoxFile(&printer, protocolType)
@@ -939,14 +943,14 @@ extension JNISwift2JavaGenerator {
       if let getAsCaseFunctionDecl = translatedCase.getAsCaseFunction,
         var getAsCaseFunction = self.translatedDecl(for: getAsCaseFunctionDecl)
       {
-        let args =
-          if enumCase.parameters.count == 1 {
-            "t"
-          } else {
-            (0..<enumCase.parameters.count).map { i in
-              "t.$\(i)"
-            }.joined(separator: .comma)
+        let args = (0..<enumCase.parameters.count).map { i in
+          let value = enumCase.parameters.count == 1 ? "t" : "t.$\(i)"
+          // With `kotlinOutput`, an optional value is the record's nullable component.
+          if let getter = translatedCase.nullableValueGetters.indices.contains(i) ? translatedCase.nullableValueGetters[i] : nil {
+            return "(\(value).isPresent() ? \(value).\(getter)() : null)"
           }
+          return value
+        }.joined(separator: .comma)
         let translatedResult = getAsCaseFunction.translatedFunctionSignature.result
         let associatedValues = JavaNativeConversionStep.placeToVar(
           translatedResult.conversion,
