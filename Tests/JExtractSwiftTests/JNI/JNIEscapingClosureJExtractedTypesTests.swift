@@ -390,5 +390,14 @@ struct JNIEscapingClosureJExtractedTypesTests {
         "let onItemHandle$ = _makeMainActorSwiftClosure { arguments$, environment in",
       ]
     )
+    try assertOutput(
+      input: itemSource + "\npublic func present(_ cb: @escaping (_ onPicked: @escaping (Item?) -> Void) -> Void) {}",
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "onPickedClosure$((_swiftClosureArgument(arguments$, 0, in: environment) == nil ? nil : UnsafeMutablePointer<Item>"
+      ]
+    )
   }
 }
