@@ -239,7 +239,8 @@ extension SwiftFunctionSignature {
     if let resultType = node.signature.returnClause?.type {
       result = try SwiftResult(
         convention: .direct,
-        type: SwiftType(resultType, lookupContext: lookupContext)
+        type: Self.concreteSelfType(resultType, enclosingType: enclosingType, lookupContext: lookupContext)
+          ?? SwiftType(resultType, lookupContext: lookupContext)
       )
     } else {
       result = .void
@@ -263,6 +264,27 @@ extension SwiftFunctionSignature {
       }
 
     self.isDistributed = node.modifiers.contains { $0.name.tokenKind == .keyword(.distributed) }
+  }
+
+  /// `Self` or `Self?` as a result of a struct's, an enum's or a class's member: the type itself. In a
+  /// protocol, `Self` is the conforming type, which isn't known.
+  static func concreteSelfType(
+    _ type: TypeSyntax,
+    enclosingType: SwiftType?,
+    lookupContext: SwiftTypeLookupContext
+  ) -> SwiftType? {
+    guard let enclosingType, case .nominal(let nominal) = enclosingType, !nominal.isProtocol else {
+      return nil
+    }
+    if let identifier = type.as(IdentifierTypeSyntax.self), identifier.name.text == "Self" {
+      return enclosingType
+    }
+    if let optional = type.as(OptionalTypeSyntax.self),
+      let identifier = optional.wrappedType.as(IdentifierTypeSyntax.self), identifier.name.text == "Self"
+    {
+      return SwiftKnownTypes(symbolTable: lookupContext.symbolTable).optionalSugar(enclosingType)
+    }
+    return nil
   }
 
   public static func translateGenericParameters(
