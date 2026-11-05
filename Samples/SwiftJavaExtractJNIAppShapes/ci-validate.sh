@@ -7,3 +7,8 @@ set -e
 swift build --disable-experimental-prebuilts --disable-sandbox
 
 ./gradlew test
+
+# An app sharing these modules with iOS builds them for iOS too.
+if [ "$(uname)" = "Darwin" ]; then
+  xcodebuild -scheme SwiftJavaExtractJNIAppShapes -destination 'generic/platform=iOS Simulator' -quiet build
+fi

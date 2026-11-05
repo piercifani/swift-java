@@ -14,7 +14,8 @@ swift build --disable-experimental-prebuilts --disable-sandbox
 ./gradlew test   # from the repository root: ./gradlew :Samples:SwiftJavaExtractJNIAppShapes:test
 ```
 
-macOS only: it uses Combine (an app on Android uses an implementation of the same API, such as
+The modules also build for iOS (`ci-validate.sh` checks it), as an app sharing them with iOS needs. The
+tests run on macOS only: it uses Combine (an app on Android uses an implementation of the same API, such as
 OpenCombine) and runs main-actor tests on the process's first thread (`-XstartOnFirstThread`).
 
 ## Modules
