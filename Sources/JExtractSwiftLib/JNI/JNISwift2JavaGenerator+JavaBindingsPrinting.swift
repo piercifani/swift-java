@@ -1072,14 +1072,27 @@ extension JNISwift2JavaGenerator {
       Corresponds to the Swift closure parameter of type {@code \(functionType.swiftType)}.
       """
     )
-    printer.print(
-      """
-      @FunctionalInterface
-      public interface \(functionType.name) {
-        \(functionType.result.javaType) \(config.effectiveClosureMethodName)(\(apiParams.joined(separator: .comma)));
+    printer.print("@FunctionalInterface")
+    printer.printBraceBlock("public interface \(functionType.name)") { printer in
+      printer.print("\(functionType.result.javaType) \(config.effectiveClosureMethodName)(\(apiParams.joined(separator: .comma)));")
+      for nested in functionType.nestedFunctionTypes {
+        printer.println()
+        printJavaBindingWrapperFunctionTypeHelper(&printer, nested)
+        printer.println()
+        printSwiftClosureFactory(&printer, nested)
       }
-      """
-    )
+    }
+  }
+
+  /// The Java object for a Swift closure that Swift passes to Java: a lambda calling the `SwiftClosure` of
+  /// `handle`, which Swift made with `_makeSwiftClosure`.
+  private func printSwiftClosureFactory(_ printer: inout JavaPrinter, _ functionType: TranslatedFunctionType) {
+    let parameters = functionType.parameters.map { $0.parameter.renderParameter() }.joined(separator: .comma)
+    let arguments = functionType.parameters.map(\.parameter.name).joined(separator: .comma)
+    printer.printBraceBlock("static \(functionType.name) $\(functionType.name)FromSwiftClosure(long handle)") { printer in
+      printer.print("org.swift.swiftkit.core.SwiftClosure closure$ = new org.swift.swiftkit.core.SwiftClosure(handle);")
+      printer.print("return (\(parameters)) -> closure$.call(\(arguments));")
+    }
   }
 
   private func printNecessarySupportTypes(

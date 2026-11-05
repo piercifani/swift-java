@@ -353,4 +353,42 @@ struct JNIEscapingClosureJExtractedTypesTests {
       ]
     )
   }
+
+  /// A closure implemented in Java that takes a Swift closure keeps it, to call later: the closure's interface
+  /// nests one for it, and a factory wrapping the `SwiftClosure` Swift makes of it.
+  @Test
+  func closureTakingASwiftClosure() throws {
+    let input = itemSource + """
+
+      public func present(_ cb: @escaping (_ titles: [String], _ onPicked: @escaping (String) -> Void, _ onItem: @escaping @MainActor (Item) -> Void) -> Void) {}
+      """
+    try assertOutput(
+      input: input,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "void apply(java.lang.String[] titles, cb.onPicked onPicked, cb.onItem onItem);",
+        """
+        static onPicked $onPickedFromSwiftClosure(long handle) {
+          org.swift.swiftkit.core.SwiftClosure closure$ = new org.swift.swiftkit.core.SwiftClosure(handle);
+          return (java.lang.String _0) -> closure$.call(_0);
+        }
+        """,
+      ]
+    )
+    try assertOutput(
+      input: input,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        #"@JavaInterface("com.example.swift.SwiftModule$present$cb$onPicked")"#,
+        #"@JavaStaticMethod("$onPickedFromSwiftClosure")"#,
+        "let onPickedHandle$ = _makeSwiftClosure { arguments$, environment in",
+        "onPickedClosure$(String.fromJavaObject(_swiftClosureArgument(arguments$, 0, in: environment), in: environment))",
+        "let onItemHandle$ = _makeMainActorSwiftClosure { arguments$, environment in",
+      ]
+    )
+  }
 }

@@ -90,8 +90,11 @@ extension SwiftFunctionType {
     self.isEscaping = isEscaping
     self.parameters = try node.parameters.map { param in
       let isInout = param.inoutKeyword != nil
+      // `(_ titles: [String]) -> Void` names its parameter `titles`, which the Java interface's keeps.
+      let name = param.secondName ?? param.firstName.flatMap { $0.tokenKind == .wildcard ? nil : $0 }
       return SwiftParameter(
         convention: isInout ? .inout : .byValue,
+        parameterName: name?.text,
         type: try SwiftType(param.type, lookupContext: lookupContext)
       )
     }
