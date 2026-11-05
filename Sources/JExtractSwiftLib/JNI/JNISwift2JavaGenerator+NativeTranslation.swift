@@ -2350,10 +2350,16 @@ extension JNISwift2JavaGenerator {
         )
 
         var pointerCaptures: [(unsafeSendable: String, original: String)] = []
+        // An existential of `Sendable` protocols is captured as it is: `nonisolated(unsafe)` would be unnecessary.
+        var sendableCaptures: Set<String> = []
         if let selfParameter = nativeFunctionSignature.selfParameter {
-          if case .extractSwiftProtocolValue = selfParameter.conversion {
+          if case .extractSwiftProtocolValue(_, _, let protocolTypes) = selfParameter.conversion {
+            let isSendable = protocolTypes.allSatisfy { $0.nominalTypeDecl.declaresSendable }
             for parameter in selfParameter.parameters {
               pointerCaptures.append(("\(parameter.name)ExistentialUnsafeSendable$", "\(parameter.name)Existential$"))
+              if isSendable {
+                sendableCaptures.insert("\(parameter.name)ExistentialUnsafeSendable$")
+              }
             }
           } else {
             for parameter in selfParameter.parameters {
@@ -2375,7 +2381,8 @@ extension JNISwift2JavaGenerator {
           }
         }
         for capture in pointerCaptures {
-          printer.print("nonisolated(unsafe) let \(capture.unsafeSendable) = \(capture.original)")
+          let modifier = sendableCaptures.contains(capture.unsafeSendable) ? "" : "nonisolated(unsafe) "
+          printer.print("\(modifier)let \(capture.unsafeSendable) = \(capture.original)")
         }
 
         func printDo(printer: inout SwiftPrinter) {
@@ -2586,5 +2593,12 @@ extension SwiftNominalType {
     case .optional, .dictionary, .set: true
     default: false
     }
+  }
+}
+
+extension SwiftNominalTypeDeclaration {
+  /// Whether the declaration states a `Sendable` conformance in its inheritance clause.
+  var declaresSendable: Bool {
+    syntax.inheritanceClause?.inheritedTypes.contains { $0.type.trimmedDescription == "Sendable" } ?? false
   }
 }
