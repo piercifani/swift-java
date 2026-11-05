@@ -32,8 +32,8 @@ extension JNISwift2JavaGenerator {
       guard let closureTy = ty.syntheticClosureType else {
         continue
       }
-      // With Java callbacks enabled, wrap-java generates these classes for us.
-      if !config.effectiveEnableJavaCallbacks {
+      // With wrap-java's bindings, wrap-java generates these classes for us.
+      if !usesWrapJavaBindings {
         let fn = closureTy.functionType
         for type in fn.parameters.map(\.type) + [fn.resultType] {
           for nominal in jextractedNominals(in: type) {
@@ -43,6 +43,64 @@ extension JNISwift2JavaGenerator {
       }
       printEscapingClosureWrapJavaInterface(&printer, closureTy)
     }
+  }
+
+  /// Whether wrap-java, run by the build plugin, generates the Swift bindings of the Java classes and
+  /// interfaces Swift calls; otherwise jextract prints just enough of them.
+  var usesWrapJavaBindings: Bool {
+    config.effectiveEnableJavaCallbacks && config.effectiveJavaCallbacksBindings == .wrapJava
+  }
+
+  /// Prints the `@JavaInterface` binding of a protocol's Java interface that `wrapper` calls Java
+  /// implementations through: a method for each requirement it calls with `@JavaMethod`.
+  func printJavaInterfaceBinding(_ printer: inout SwiftPrinter, _ wrapper: JavaInterfaceSwiftWrapper) {
+    let protocolDecl = wrapper.importedType.swiftNominal
+    guard let javaPackage = javaPackage(of: protocolDecl) else {
+      return
+    }
+    var methods: [String] = []
+    // `async` requirements are called with `dynamicJavaMethodCall`.
+    for function in wrapper.functions where !function.originalFunctionSignature.isAsync {
+      guard
+        let requirement = wrapper.importedType.methods.first(where: {
+          $0.functionSignature == function.originalFunctionSignature
+        }),
+        let translatedDecl = translatedDecl(for: requirement)
+      else {
+        continue
+      }
+      let signature = function.originalFunctionSignature
+      for type in signature.parameters.map(\.type) + [signature.result.type] {
+        for nominal in jextractedNominals(in: type) {
+          printMinimalJavaClassWrapper(&printer, nominal)
+        }
+      }
+      var parameters = signature.parameters.enumerated().map { idx, parameter in
+        "_ p\(idx): \(wrapJavaTypeName(parameter.type, isResult: false))"
+      }
+      if translatedDecl.translatedFunctionSignature.requiresSwiftArena {
+        parameters.append("_ swiftArena: JavaSwiftArena?")
+      }
+      let throwsClause = signature.isThrowing ? " throws" : ""
+      let resultClause =
+        signature.result.type.isVoid ? "" : " -> \(wrapJavaTypeName(signature.result.type, isResult: true))"
+      methods.append(
+        """
+        @JavaMethod("\(translatedDecl.name)")
+        public func \(function.swiftFunctionName)(\(parameters.joined(separator: .comma)))\(throwsClause)\(resultClause)
+        """
+      )
+    }
+    let binaryName = "\(javaPackage).\(protocolDecl.qualifiedName.replacingOccurrences(of: ".", with: "$"))"
+    printer.printBraceBlock(
+      """
+      @JavaInterface("\(binaryName)")
+      public struct \(protocolDecl.javaInterfaceName)
+      """
+    ) { printer in
+      printer.print(methods.joined(separator: "\n\n"))
+    }
+    printer.println()
   }
 
   /// A nominal type this module jextracts, which crosses into Java as its generated Java class.
@@ -87,6 +145,10 @@ extension JNISwift2JavaGenerator {
   /// The Swift spelling of a closure parameter or result in the `@JavaInterface` wrapper.
   /// Jextracted types are passed as their Java class, through its JavaKit wrapper.
   private func wrapJavaTypeName(_ type: SwiftType, isResult: Bool) -> String {
+    // A Java object implementing a protocol, which Swift checks for a Swift instance or a Java implementation.
+    if isResult, case .existential = type {
+      return "JavaObject!"
+    }
     if let nominal = jextractedNominal(type) {
       return nominal.generatedJavaClassMacroName + (isResult ? "!" : "?")
     }

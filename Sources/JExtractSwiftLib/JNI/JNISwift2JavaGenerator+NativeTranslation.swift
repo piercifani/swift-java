@@ -392,7 +392,9 @@ extension JNISwift2JavaGenerator {
           method: methodName,
           qualifier: parameterName,
         )
-        let generator = JavaInterfaceProtocolWrapperGenerator()
+        let generator = JavaInterfaceProtocolWrapperGenerator(
+          javaImplementableProtocols: Set(protocolWrappers.keys.map(\.swiftNominal.qualifiedName))
+        )
         let syntheticFunction = try generator.generateSyntheticClosureFunction(
           functionType: functionType,
           javaInterfaceName: javaClosureInterfaceName,

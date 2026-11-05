@@ -181,6 +181,14 @@ public struct Configuration: Codable {
     enableJavaCallbacks ?? false
   }
 
+  /// With `enableJavaCallbacks`, where the Swift bindings for calling Java implementations come from:
+  /// `wrapJava` (the default) runs Java tools in the build plugin; `jextract` prints them with the
+  /// thunks, so the build needs neither Java tools nor a disabled sandbox.
+  public var javaCallbacksBindings: JExtractJavaCallbacksBindings?
+  public var effectiveJavaCallbacksBindings: JExtractJavaCallbacksBindings {
+    javaCallbacksBindings ?? .default
+  }
+
   /// If specified, JExtract will output to this file a list of paths to all generated Java source files.
   public var generatedJavaSourcesListFileOutput: String?
 

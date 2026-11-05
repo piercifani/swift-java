@@ -104,6 +104,10 @@ extension JNISwift2JavaGenerator {
   }
 
   struct JavaInterfaceProtocolWrapperGenerator {
+    /// Protocols Java can implement (`enableJavaCallbacks`), by qualified name: a closure implemented in
+    /// Java can return one of them, implemented in Java or in Swift.
+    var javaImplementableProtocols: Set<String> = []
+
     func generate(for type: ExtractedNominalType) throws -> JavaInterfaceSwiftWrapper {
       if !type.initializers.isEmpty
         || type.methods.contains(where: \.isStatic)
@@ -319,7 +323,18 @@ extension JNISwift2JavaGenerator {
       case .tuple([]): // void
         return .placeholder
 
-      case .genericParameter, .function, .metatype, .tuple, .existential, .opaque, .composite, .inlineArray:
+      case .existential(let protocolType):
+        guard let protocolDecl = protocolType.asNominalTypeDeclaration,
+          javaImplementableProtocols.contains(protocolDecl.qualifiedName)
+        else {
+          throw JavaTranslationError.unsupportedSwiftType(type)
+        }
+        return .toSwiftExistential(
+          .unwrapOptional(.placeholder, message: "Upcall to \(methodName) unexpectedly returned nil"),
+          protocolDecl: protocolDecl
+        )
+
+      case .genericParameter, .function, .metatype, .tuple, .opaque, .composite, .inlineArray:
         throw JavaTranslationError.unsupportedSwiftType(type)
       }
     }
@@ -408,6 +423,10 @@ enum UpcallConversionStep {
   /// A Java array held as a plain Java object, as the Swift array of its elements' Java objects.
   indirect case javaObjectArray(UpcallConversionStep, elementJavaClass: String)
 
+  /// A Java object implementing a Swift protocol, as the protocol's existential: the Swift value of a
+  /// jextracted instance, or a Swift wrapper around a Java implementation.
+  indirect case toSwiftExistential(UpcallConversionStep, protocolDecl: SwiftNominalTypeDeclaration)
+
 
   /// Returns the conversion string applied to the placeholder.
   func render(_ printer: inout SwiftPrinter, _ placeholder: String) -> String {
@@ -463,6 +482,26 @@ enum UpcallConversionStep {
     case .fromJavaOptional(let inner):
       let inner = inner.render(&printer, placeholder)
       return "Optional(javaOptional: \(inner))"
+
+    case .toSwiftExistential(let inner, let protocolDecl):
+      let inner = inner.render(&printer, placeholder)
+      let existentialType = "any \(protocolDecl.qualifiedName)"
+      printer.print(
+        """
+        let existential$: \(existentialType)
+        if let instance$ = \(inner).as(JavaJNISwiftInstance.self) {
+          let rawPointer$ = UnsafeMutableRawPointer(bitPattern: Int(instance$._memoryAddress()))!
+          let dynamicType$ = unsafeBitCast(UnsafeRawPointer(bitPattern: Int(instance$._typeMetadataAddress()))!, to: Any.Type.self)
+          func load$<T>(_ type: T.Type) -> \(existentialType) {
+            rawPointer$.load(as: type) as! \(existentialType)
+          }
+          existential$ = _openExistential(dynamicType$, do: load$)
+        } else {
+          existential$ = \(protocolDecl.javaInterfaceSwiftImplementationName)(\(protocolDecl.javaInterfaceVariableName): \(protocolDecl.javaInterfaceName)(javaThis: \(inner).javaThis, environment: \(inner).javaEnvironment))
+        }
+        """
+      )
+      return "existential$"
 
     case .javaObjectArray(let inner, let elementJavaClass):
       let inner = inner.render(&printer, placeholder)
