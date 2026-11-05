@@ -171,8 +171,14 @@ extension SwiftFunctionSignature {
     enclosingType: SwiftType,
     lookupContext: SwiftTypeLookupContext
   ) throws {
+    // An associated value is stored in the enum, so a closure payload is always escaping.
     let parameters = try node.parameterClause?.parameters.map { param in
-      try SwiftParameter(param, lookupContext: lookupContext)
+      var parameter = try SwiftParameter(param, lookupContext: lookupContext)
+      if case .function(var functionType) = parameter.type {
+        functionType.isEscaping = true
+        parameter.type = .function(functionType)
+      }
+      return parameter
     }
 
     self.init(
