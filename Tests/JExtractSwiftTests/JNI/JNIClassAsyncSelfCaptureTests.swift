@@ -77,6 +77,26 @@ struct JNIAsyncSelfCaptureTests {
     )
   }
 
+  @Test("Import: a Sendable protocol's box captures its existential without nonisolated(unsafe) (Swift)")
+  func sendableProtocolBoxAsyncMethod_swift() throws {
+    try assertOutput(
+      input: """
+        public protocol Worker: Sendable {
+          func work() async -> Int64
+        }
+        """,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "let selfPointerExistentialUnsafeSendable$ = selfPointerExistential$"
+      ],
+      notExpectedChunks: [
+        "nonisolated(unsafe) let selfPointerExistentialUnsafeSendable$"
+      ]
+    )
+  }
+
   @Test("Import: generic class async method captures only self pointer (Swift)")
   func genericClassAsyncMethod_swift() throws {
     try assertOutput(
