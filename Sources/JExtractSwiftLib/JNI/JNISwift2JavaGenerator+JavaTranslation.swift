@@ -1252,6 +1252,32 @@ extension JNISwift2JavaGenerator {
     ) throws -> TranslatedParameter {
       let parameterAnnotations: [JavaAnnotation] = getJavaTypeAnnotations(swiftType: swiftType, config: config)
 
+      // An optional array is the array, passed as it would be, or `null` for `nil`.
+      if case .nominal(let nominalType) = swiftType, case .array(let elementType) = nominalType.asKnownType {
+        let array = try translateArrayParameter(
+          elementType: elementType,
+          parameterName: parameterName,
+          genericParameters: genericParameters,
+          genericRequirements: genericRequirements
+        )
+        let arrayName = "\(parameterName)$array"
+        return TranslatedParameter(
+          parameter: JavaParameter(
+            name: parameterName,
+            type: .optional(array.parameter.type.javaType),
+            annotations: parameterAnnotations
+          ),
+          conversion: .ternary(
+            .equals(
+              .placeToVar(.method(.placeholder, function: "orElse", arguments: [.constant("null")]), name: arrayName),
+              .constant("null")
+            ),
+            thenExp: .constant("null"),
+            elseExp: .replacingPlaceholder(array.conversion, placeholder: arrayName)
+          )
+        )
+      }
+
       switch swiftType {
       case .nominal(let nominalType):
         let nominalTypeName = nominalType.nominalTypeDecl.qualifiedName

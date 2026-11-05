@@ -279,4 +279,38 @@ struct JNIOptionalTests {
       ]
     )
   }
+
+  /// An optional array crosses as the array, or `null` for `nil`, whatever its elements.
+  @Test
+  func optionalArrayParameters() throws {
+    let input = """
+      public struct Leg {}
+      public func counts(_ values: [Int64]?) {}
+      public func legs(_ values: [Leg]?) {}
+      """
+    try assertOutput(
+      input: input,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "public static void counts(java.util.Optional<long[]> values) {",
+        "var values$array = values.orElse(null);",
+        "private static native void $counts(long[] values);",
+        "public static void legs(java.util.Optional<Leg[]> values) {",
+      ]
+    )
+    try assertOutput(
+      input: input,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        """
+        SwiftModule.counts(values.map {
+          return [Int64](fromJNI: $0, in: environment)
+        """
+      ]
+    )
+  }
 }
