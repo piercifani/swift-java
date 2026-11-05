@@ -167,24 +167,46 @@ extension JNISwift2JavaGenerator {
 
     func translate(enumCase: ExtractedEnumCase) throws -> TranslatedEnumCase {
       let methodName = "" // TODO: Used for closures, replace with better name?
+      let javaCaseClassName = enumCase.name.firstCharacterUppercased
 
-      let parameterResults = try enumCase.parameters.enumerated().map { idx, parameter in
-        let resultName = (parameter.name ?? "arg\(idx)").javaSafeIdentifier
-        let translatedResult = try self.translateResult(
-          swiftType: parameter.type,
-          methodName: methodName,
-          resultName: resultName
+      let parameterResults: [(parameter: JavaParameter, requiresSwiftArena: Bool)]
+      do {
+        parameterResults = try enumCase.parameters.enumerated().map { idx, parameter in
+          let resultName = (parameter.name ?? "arg\(idx)").javaSafeIdentifier
+          let translatedResult = try self.translateResult(
+            swiftType: parameter.type,
+            methodName: methodName,
+            resultName: resultName
+          )
+          return (
+            parameter: JavaParameter(name: resultName, type: translatedResult.javaType),
+            requiresSwiftArena: translatedResult.conversion.requiresSwiftArena
+          )
+        }
+      } catch {
+        // Java can't receive a closure payload, but the case is still one Java can create, recognize, and
+        // call the enum's methods on: keep it, without its values.
+        let hasClosurePayload = enumCase.parameters.contains {
+          if case .function = $0.type { true } else { false }
+        }
+        guard hasClosurePayload else {
+          throw error
+        }
+        logger.info(
+          "\(enumCase.enumType.nominalTypeDecl.qualifiedName).\(enumCase.name): associated values aren't readable from Java; \(error)"
         )
-        return (
-          parameter: JavaParameter(name: resultName, type: translatedResult.javaType),
-          requiresSwiftArena: translatedResult.conversion.requiresSwiftArena
+        return TranslatedEnumCase(
+          name: javaCaseClassName,
+          original: enumCase,
+          parameters: [],
+          getAsCaseFunction: nil,
+          requiresSwiftArena: false
         )
       }
 
       let associatedValueTypes = enumCase.parameters.map { param in
         param.type.description
       }.joined(separator: .comma)
-      let javaCaseClassName = enumCase.name.firstCharacterUppercased
       let resultType = knownTypes.optionalSugar(
         .tuple(
           enumCase.parameters.map {
