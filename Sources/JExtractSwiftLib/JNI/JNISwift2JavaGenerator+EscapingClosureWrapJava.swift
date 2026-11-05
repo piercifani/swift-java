@@ -59,21 +59,22 @@ extension JNISwift2JavaGenerator {
       return
     }
     var methods: [String] = []
-    // `async` requirements are called with `dynamicJavaMethodCall`.
-    for function in wrapper.functions where !function.originalFunctionSignature.isAsync {
-      guard
-        let requirement = wrapper.importedType.methods.first(where: {
-          $0.functionSignature == function.originalFunctionSignature
-        }),
-        let translatedDecl = translatedDecl(for: requirement)
-      else {
-        continue
-      }
+    for function in wrapper.functions {
+      // Every requirement's conversions use the Java classes of its jextracted types.
       let signature = function.originalFunctionSignature
       for type in signature.parameters.map(\.type) + [signature.result.type] {
         for nominal in jextractedNominals(in: type) {
           printMinimalJavaClassWrapper(&printer, nominal)
         }
+      }
+      // `async` requirements are called with `dynamicJavaMethodCall`.
+      guard !signature.isAsync,
+        let requirement = wrapper.importedType.methods.first(where: {
+          $0.name == function.swiftFunctionName && $0.functionSignature == signature
+        }),
+        let translatedDecl = translatedDecl(for: requirement)
+      else {
+        continue
       }
       var parameters = signature.parameters.enumerated().map { idx, parameter in
         "_ p\(idx): \(wrapJavaTypeName(parameter.type, isResult: false))"

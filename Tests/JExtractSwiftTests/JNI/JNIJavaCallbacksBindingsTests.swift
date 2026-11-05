@@ -119,4 +119,27 @@ struct JNIJavaCallbacksBindingsTests {
       ]
     )
   }
+
+  @Test
+  func asyncRequirements_printTheirTypesJavaClasses() throws {
+    var config = config(bindings: .jextract)
+    config.asyncFuncMode = .completableFuture
+    try assertOutput(
+      input: """
+        public struct Address {
+          public struct Result {}
+        }
+        public protocol AddressSearch {
+          func resolve(_ result: Address.Result) async -> Address
+        }
+        """,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        #"@JavaClass("com.example.swift.Address$Result")"#
+      ]
+    )
+  }
 }
