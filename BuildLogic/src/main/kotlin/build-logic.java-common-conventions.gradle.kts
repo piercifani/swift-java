@@ -14,7 +14,6 @@
 
 import java.util.*
 import java.io.*
-import kotlin.system.exitProcess
 import kotlinx.serialization.json.*
 
 plugins {
@@ -32,16 +31,9 @@ repositories {
 }
 
 fun getSwiftRuntimeLibraryPaths(): List<String> {
-    val process = ProcessBuilder("swiftc", "-print-target-info")
-        .redirectError(ProcessBuilder.Redirect.INHERIT)
-        .start()
-
-    val output = process.inputStream.bufferedReader().use { it.readText() }
-    val exitCode = process.waitFor()
-    if (exitCode != 0) {
-        System.err.println("Error executing swiftc -print-target-info")
-        exitProcess(exitCode)
-    }
+    // Through `providers.exec`: Gradle deprecates starting a process at configuration time otherwise.
+    // It fails the build if swiftc does.
+    val output = providers.exec { commandLine("swiftc", "-print-target-info") }.standardOutput.asText.get()
 
     val json = Json.parseToJsonElement(output)
     val runtimeLibraryPaths = json.jsonObject["paths"]?.jsonObject?.get("runtimeLibraryPaths")?.jsonArray
