@@ -37,34 +37,9 @@ public final class SwiftClosure {
         CLEANER.register(this, () -> $release(handle));
     }
 
-    /**
-     * Calls the Swift closure. Arguments and the result are boxed Java values; an optional argument,
-     * a Java {@code Optional}, reaches Swift as its value or {@code null}.
-     */
+    /** Calls the Swift closure. Arguments and the result are boxed Java values. */
     public Object call(Object... arguments) {
-        for (int i = 0; i < arguments.length; i++) {
-            arguments[i] = unwrapOptional(arguments[i]);
-        }
         return $call(handle, arguments);
-    }
-
-    private static Object unwrapOptional(Object argument) {
-        if (argument instanceof java.util.Optional) {
-            return ((java.util.Optional<?>) argument).orElse(null);
-        }
-        if (argument instanceof java.util.OptionalLong) {
-            java.util.OptionalLong value = (java.util.OptionalLong) argument;
-            return value.isPresent() ? value.getAsLong() : null;
-        }
-        if (argument instanceof java.util.OptionalInt) {
-            java.util.OptionalInt value = (java.util.OptionalInt) argument;
-            return value.isPresent() ? value.getAsInt() : null;
-        }
-        if (argument instanceof java.util.OptionalDouble) {
-            java.util.OptionalDouble value = (java.util.OptionalDouble) argument;
-            return value.isPresent() ? value.getAsDouble() : null;
-        }
-        return argument;
     }
 
     private static native Object $call(long handle, Object[] arguments);
