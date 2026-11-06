@@ -1056,6 +1056,14 @@ extension JNISwift2JavaGenerator {
         }
 
         printJavaBindingWrapperFunctionTypeHelper(&printer, functionType)
+        // Swift passes a Swift closure to a Java implementation of a protocol requirement as this interface.
+        let closure = functionType.swiftType
+        if decl.parentType?.asNominalTypeDeclaration?.kind == .protocol, config.effectiveEnableJavaCallbacks,
+          !usesWrapJavaBindings, functionType.syntheticClosureType != nil,
+          closure.isEscaping, !closure.isAsync, closure.resultType.isVoid
+        {
+          printSwiftClosureFactory(&printer, functionType)
+        }
       }
     }
   }

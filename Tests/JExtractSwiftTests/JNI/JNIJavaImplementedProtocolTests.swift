@@ -311,4 +311,61 @@ struct JNIJavaImplementedProtocolTests {
       ]
     )
   }
+
+  @Test
+  func closureRequirement_passesTheSwiftClosureToJava() throws {
+    var config = config
+    config.javaCallbacksBindings = .jextract
+    config.closureMethodName = "invoke"
+    let input = """
+      public protocol Notifications {
+        func onAuthError(_ handler: @escaping @Sendable (String, Int64?) -> Void)
+        func onEach(_ body: (String) -> Void)
+      }
+      """
+    try assertOutput(
+      input: input,
+      config: config,
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        """
+        static handler $handlerFromSwiftClosure(long handle) {
+          org.swift.swiftkit.core.SwiftClosure closure$ = new org.swift.swiftkit.core.SwiftClosure(handle);
+          return (java.lang.String _0, OptionalLong _1) -> closure$.call(_0, _1);
+        }
+        """
+      ]
+    )
+    try assertOutput(
+      input: input,
+      config: config,
+      .jni,
+      .swift,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        """
+        @JavaClass("com.example.swift.Notifications$onAuthError")
+        open class JavaNotifications_onAuthError: JavaObject {}
+        extension JavaClass<JavaNotifications_onAuthError> {
+          @JavaStaticMethod("$handlerFromSwiftClosure")
+          public func _handlerFromSwiftClosure(_ handle: Int64) -> JavaNotifications_onAuthError_handler!
+        }
+        """,
+        "public func onAuthError(_ p0: JavaNotifications_onAuthError_handler?)",
+        """
+        public func onAuthError(_ handler: @escaping @Sendable (String, Int64?) -> Void) {
+          let environment$ = try! JavaVirtualMachine.shared().environment()
+          try! environment$.withLocalFrame(capacity: 6) {
+            let javaInterface$ = JavaNotifications(javaThis: _javaNotificationsInterface.javaThis, environment: environment$)
+            let handlerClosure$ = handler
+            let handlerHandle$ = _makeSwiftClosure { arguments$, environment in
+        """,
+        "javaInterface$.onAuthError(try! JavaClass<JavaNotifications_onAuthError>(environment: JavaVirtualMachine.shared().environment())._handlerFromSwiftClosure(handlerHandle$))",
+        // A non-escaping closure can't be kept by Java.
+        #"fatalError("Notifications.onEach can't be called on a Java implementation yet")"#,
+      ]
+    )
+  }
 }
