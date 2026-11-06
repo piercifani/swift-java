@@ -79,6 +79,34 @@ extension JNISwift2JavaGenerator {
       var parameters = signature.parameters.enumerated().map { idx, parameter in
         "_ p\(idx): \(wrapJavaTypeName(parameter.type, isResult: false))"
       }
+      // A closure parameter crosses as its interface, which Java makes of a Swift closure.
+      for (idx, parameter) in signature.parameters.enumerated() {
+        guard case .function = parameter.type else {
+          continue
+        }
+        let name = (parameter.parameterName ?? "arg\(idx)").javaSafeIdentifier.thunkSafeParameterName
+        guard let functionType = translatedDecl.functionTypes.first(where: { $0.name == name }),
+          let closureTy = functionType.syntheticClosureType,
+          let owner = swiftClosureFactoryOwner(functionType)
+        else {
+          continue
+        }
+        parameters[idx] = "_ p\(idx): \(closureTy.javaInterfaceName)?"
+        guard printedSwiftClosureFactoryOwners.insert(owner.name).inserted else {
+          continue
+        }
+        printer.print(
+          """
+          @JavaClass("\(owner.binaryName)")
+          open class \(owner.name): JavaObject {}
+          extension JavaClass<\(owner.name)> {
+            @JavaStaticMethod("$\(name)FromSwiftClosure")
+            public func _\(name)FromSwiftClosure(_ handle: Int64) -> \(closureTy.javaInterfaceName)!
+          }
+
+          """
+        )
+      }
       if translatedDecl.translatedFunctionSignature.requiresSwiftArena {
         parameters.append("_ swiftArena: JavaSwiftArena?")
       }
@@ -102,6 +130,19 @@ extension JNISwift2JavaGenerator {
       printer.print(methods.joined(separator: "\n\n"))
     }
     printer.println()
+  }
+
+  /// The Swift class of the Java helper class declaring `functionType`'s interface, which has the factory
+  /// making the interface of a Swift closure: `JavaProto_method` for `Proto.method.handler`.
+  func swiftClosureFactoryOwner(_ functionType: TranslatedFunctionType) -> (name: String, binaryName: String)? {
+    guard let closureTy = functionType.syntheticClosureType,
+      closureTy.javaInterfaceName.hasSuffix("_\(functionType.name)"),
+      closureTy.javaBinaryName.hasSuffix("$\(functionType.name)")
+    else {
+      return nil
+    }
+    let suffixCount = functionType.name.count + 1
+    return (String(closureTy.javaInterfaceName.dropLast(suffixCount)), String(closureTy.javaBinaryName.dropLast(suffixCount)))
   }
 
   /// A nominal type this module jextracts, which crosses into Java as its generated Java class.

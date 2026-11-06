@@ -47,7 +47,8 @@ extension JNISwift2JavaGenerator {
         let translator = JavaInterfaceProtocolWrapperGenerator(
           asyncFuncMode: config.effectiveAsyncFuncMode,
           optionalsAsNullable: config.effectiveKotlinOutput,
-          javaMapObjectBridge: nativeTranslation.javaMapObjectBridge
+          javaMapObjectBridge: nativeTranslation.javaMapObjectBridge,
+          closureMethodName: usesWrapJavaBindings ? nil : config.effectiveClosureMethodName
         )
         wrappers[type] = try translator.generate(for: type)
       } catch {
@@ -135,6 +136,9 @@ extension JNISwift2JavaGenerator {
     /// With `dictionariesAsJavaMaps`, the bridge of a dictionary, `Any` or `AnyHashable` (or an optional of one),
     /// which crosses as the Java object the bridge makes.
     var javaMapObjectBridge: (SwiftType) throws -> String? = { _ in nil }
+    /// A requirement's closure parameter crosses as its Java interface, which Java makes of a `SwiftClosure`
+    /// with the factory its helper class declares. Needs jextract's bindings and the interface's own method name.
+    var closureMethodName: String? = nil
 
     private func crossesAsIs(_ type: SwiftType) -> Bool {
       type.isDirectlyTranslatedToWrapJava || (foundationTypesAsJavaTypes && type.isFoundationJavaValue)
@@ -253,7 +257,7 @@ extension JNISwift2JavaGenerator {
           throw JavaTranslationError.unsupportedSwiftType(type)
         }
         if case .optional(let wrapped) = nominal.asKnownType {
-          // `nil` when Java passes `null`.
+          // `nil` when Java passes `null`: `SwiftClosure.call` passes a Java `Optional`'s value or `null`.
           return "(%ARG% == nil ? nil : \(try argumentConversion(wrapped)))"
         }
         switch nominal.nominalTypeDecl.knownTypeKind {
@@ -280,8 +284,18 @@ extension JNISwift2JavaGenerator {
         try validateAsyncRequirement(function.functionSignature)
       }
 
-      let parameters = try function.functionSignature.parameters.map {
-        try self.translateParameter($0)
+      let parameters = try function.functionSignature.parameters.enumerated().map { idx, parameter in
+        guard case .function(let closure) = parameter.type else {
+          return try self.translateParameter(parameter)
+        }
+        guard let closureMethodName,
+          KnownJavaFunctionalInterface.find(closure, closureMethodName: closureMethodName) == nil
+        else {
+          throw JavaTranslationError.unsupportedSwiftType(parameter.type)
+        }
+        // Named like the Java parameter; the interface struct is the requirement's, known once it's translated.
+        let name = (parameter.parameterName ?? "arg\(idx)").javaSafeIdentifier.thunkSafeParameterName
+        return try self.translateSwiftClosureArgument(name: name, closure: closure, interface: "")
       }
 
       let result = try translateResult(function.functionSignature.result, methodName: function.name)
@@ -581,6 +595,22 @@ enum UpcallConversionStep {
   /// jextracted instance, or a Swift wrapper around a Java implementation.
   indirect case toSwiftExistential(UpcallConversionStep, protocolDecl: SwiftNominalTypeDeclaration)
 
+
+  /// A Swift closure's conversion, made by the factory of the interface struct `interfaceStruct` names for it.
+  func withClosureInterface(_ interfaceStruct: (_ name: String) -> String?) -> UpcallConversionStep {
+    guard case .swiftClosureToJava(let inner, let name, _, let argumentConversions, let isMainActor) = self,
+      let interfaceStruct = interfaceStruct(name)
+    else {
+      return self
+    }
+    return .swiftClosureToJava(
+      inner,
+      name: name,
+      interfaceStruct: interfaceStruct,
+      argumentConversions: argumentConversions,
+      isMainActor: isMainActor
+    )
+  }
 
   /// Returns the conversion string applied to the placeholder.
   func render(_ printer: inout SwiftPrinter, _ placeholder: String) -> String {

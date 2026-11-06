@@ -283,7 +283,9 @@ extension JNISwift2JavaGenerator {
           function.parameterConversions,
         ).map { param, conversion in
           // Wrap-java does not extract parameter names, so no labels
-          conversion.render(&printer, param.parameterName!)
+          conversion.withClosureInterface { name in
+            translatedDecl.functionTypes.first { $0.name == name }.flatMap(swiftClosureFactoryOwner)?.name
+          }.render(&printer, param.parameterName!)
         }
 
         // If the underlying translated method requires

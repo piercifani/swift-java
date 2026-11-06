@@ -3026,7 +3026,7 @@ extension String {
   ]
 
   /// A Swift parameter's name as a Java and thunk parameter: a reserved one gets a `_` suffix.
-  fileprivate var thunkSafeParameterName: String {
+  var thunkSafeParameterName: String {
     Self.thunkReservedNames.contains(self) ? self + "_" : self
   }
 }
