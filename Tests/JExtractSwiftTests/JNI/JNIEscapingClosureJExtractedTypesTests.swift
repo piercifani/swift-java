@@ -390,6 +390,16 @@ struct JNIEscapingClosureJExtractedTypesTests {
         "let onItemHandle$ = _makeMainActorSwiftClosure { arguments$, environment in",
       ]
     )
+    // Swift takes an optional argument as its value or `null`.
+    try assertOutput(
+      input: itemSource + "\npublic func present(_ cb: @escaping (_ onPicked: @escaping (Item?, Int64?) -> Void) -> Void) {}",
+      .jni,
+      .java,
+      detectChunkByInitialLines: 1,
+      expectedChunks: [
+        "return (java.util.Optional<Item> _0, OptionalLong _1) -> closure$.call(_0.orElse(null), (_1.isPresent() ? _1.getAsLong() : null));"
+      ]
+    )
     try assertOutput(
       input: itemSource + "\npublic func present(_ cb: @escaping (_ onPicked: @escaping (Item?) -> Void) -> Void) {}",
       .jni,

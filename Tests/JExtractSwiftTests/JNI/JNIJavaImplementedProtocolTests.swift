@@ -333,7 +333,7 @@ struct JNIJavaImplementedProtocolTests {
         """
         static handler $handlerFromSwiftClosure(long handle) {
           org.swift.swiftkit.core.SwiftClosure closure$ = new org.swift.swiftkit.core.SwiftClosure(handle);
-          return (java.lang.String _0, OptionalLong _1) -> closure$.call(_0, _1);
+          return (java.lang.String _0, OptionalLong _1) -> closure$.call(_0, (_1.isPresent() ? _1.getAsLong() : null));
         }
         """
       ]

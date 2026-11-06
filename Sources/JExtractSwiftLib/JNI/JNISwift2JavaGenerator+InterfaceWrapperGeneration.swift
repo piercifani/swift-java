@@ -257,7 +257,7 @@ extension JNISwift2JavaGenerator {
           throw JavaTranslationError.unsupportedSwiftType(type)
         }
         if case .optional(let wrapped) = nominal.asKnownType {
-          // `nil` when Java passes `null`: `SwiftClosure.call` passes a Java `Optional`'s value or `null`.
+          // `nil` when Java passes `null`: the factory passes a Java `Optional`'s value or `null`.
           return "(%ARG% == nil ? nil : \(try argumentConversion(wrapped)))"
         }
         switch nominal.nominalTypeDecl.knownTypeKind {

@@ -1096,7 +1096,19 @@ extension JNISwift2JavaGenerator {
   /// `handle`, which Swift made with `_makeSwiftClosure`.
   private func printSwiftClosureFactory(_ printer: inout JavaPrinter, _ functionType: TranslatedFunctionType) {
     let parameters = functionType.parameters.map { $0.parameter.renderParameter() }.joined(separator: .comma)
-    let arguments = functionType.parameters.map(\.parameter.name).joined(separator: .comma)
+    // Swift takes an optional argument as its value or `null`.
+    let arguments = functionType.parameters.map { parameter -> String in
+      let name = parameter.parameter.name
+      let type = parameter.parameter.type.javaType.description
+      switch type {
+      case "OptionalLong", "OptionalInt", "OptionalDouble":
+        return "(\(name).isPresent() ? \(name).getAs\(type.dropFirst("Optional".count))() : null)"
+      case _ where type.hasPrefix("Optional<") || type.hasPrefix("java.util.Optional<"):
+        return "\(name).orElse(null)"
+      default:
+        return name
+      }
+    }.joined(separator: .comma)
     printer.printBraceBlock("static \(functionType.name) $\(functionType.name)FromSwiftClosure(long handle)") { printer in
       printer.print("org.swift.swiftkit.core.SwiftClosure closure$ = new org.swift.swiftkit.core.SwiftClosure(handle);")
       printer.print("return (\(parameters)) -> closure$.call(\(arguments));")
