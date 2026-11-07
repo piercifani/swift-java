@@ -50,6 +50,10 @@ struct JNIClosureResultsTests {
         @FunctionalInterface
         public interface result {
           java.lang.String apply(Item _0);
+
+          default java.lang.String invoke(Item _0) {
+            return apply(_0);
+          }
         }
         """,
       ]

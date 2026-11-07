@@ -62,6 +62,10 @@ struct JNIEscapingClosureTests {
           @FunctionalInterface
           public interface callback {
             void apply();
+
+            default void invoke() {
+              apply();
+            }
           }
         }
         """,
@@ -99,6 +103,10 @@ struct JNIEscapingClosureTests {
           @FunctionalInterface
           public interface closure {
             long apply(long _0);
+
+            default long invoke(long _0) {
+              return apply(_0);
+            }
           }
         }
         """
@@ -153,6 +161,10 @@ struct JNIEscapingClosureTests {
           @FunctionalInterface
           public interface callback {
             void apply();
+
+            default void invoke() {
+              apply();
+            }
           }
         }
         """

@@ -48,7 +48,7 @@ extension JNISwift2JavaGenerator {
           asyncFuncMode: config.effectiveAsyncFuncMode,
           optionalsAsNullable: config.effectiveKotlinOutput,
           javaMapObjectBridge: nativeTranslation.javaMapObjectBridge,
-          closureMethodName: usesWrapJavaBindings ? nil : config.effectiveClosureMethodName
+          closureMethodName: usesWrapJavaBindings ? nil : "apply"
         )
         wrappers[type] = try translator.generate(for: type)
       } catch {
@@ -116,7 +116,7 @@ extension JNISwift2JavaGenerator {
     /// Conversion step for the result
     let resultConversion: UpcallConversionStep
 
-    /// The name of the interface's single method, `apply` unless `closureMethodName` says otherwise
+    /// The name of the interface's abstract method, `apply`
     let methodName: String
 
     /// The original Swift function type
@@ -264,7 +264,8 @@ extension JNISwift2JavaGenerator {
         case .string, .int64, .int32, .double, .bool:
           return "\(nominal.nominalTypeDecl.qualifiedName).fromJavaObject(%ARG%, in: environment)"
         case nil where !nominal.isSwiftJavaWrapper:
-          return "UnsafeMutablePointer<\(nominal.nominalTypeDecl.qualifiedName)>(bitPattern: Int(JavaJNISwiftInstance(javaThis: %ARG%!, environment: environment)._memoryAddress()))!.pointee"
+          return
+            "UnsafeMutablePointer<\(nominal.nominalTypeDecl.qualifiedName)>(bitPattern: Int(JavaJNISwiftInstance(javaThis: %ARG%!, environment: environment)._memoryAddress()))!.pointee"
         default:
           throw JavaTranslationError.unsupportedSwiftType(type)
         }
@@ -289,7 +290,7 @@ extension JNISwift2JavaGenerator {
           return try self.translateParameter(parameter)
         }
         guard let closureMethodName,
-          KnownJavaFunctionalInterface.find(closure, closureMethodName: closureMethodName) == nil
+          KnownJavaFunctionalInterface.find(closure) == nil
         else {
           throw JavaTranslationError.unsupportedSwiftType(parameter.type)
         }

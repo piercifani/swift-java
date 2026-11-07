@@ -40,12 +40,20 @@ struct JNIAsyncClosureTests {
         @FunctionalInterface
         public interface work {
           java.util.concurrent.CompletableFuture<java.lang.Void> apply(Item _0);
+
+          default java.util.concurrent.CompletableFuture<java.lang.Void> invoke(Item _0) {
+            return apply(_0);
+          }
         }
         """,
         """
         @FunctionalInterface
         public interface fetch {
           java.util.concurrent.CompletableFuture<Item> apply(long _0);
+
+          default java.util.concurrent.CompletableFuture<Item> invoke(long _0) {
+            return apply(_0);
+          }
         }
         """,
         // Not `LongUnaryOperator`: a non-escaping async closure gets its own interface too.
@@ -53,6 +61,10 @@ struct JNIAsyncClosureTests {
         @FunctionalInterface
         public interface f {
           java.util.concurrent.CompletableFuture<java.lang.Long> apply(long _0);
+
+          default java.util.concurrent.CompletableFuture<java.lang.Long> invoke(long _0) {
+            return apply(_0);
+          }
         }
         """,
       ]

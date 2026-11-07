@@ -128,6 +128,10 @@ struct JNIEscapingClosureJExtractedTypesTests {
         @FunctionalInterface
         public interface f {
           Item apply(Item _0);
+
+          default Item invoke(Item _0) {
+            return apply(_0);
+          }
         }
         """
       ]
@@ -166,6 +170,10 @@ struct JNIEscapingClosureJExtractedTypesTests {
         @FunctionalInterface
         public interface cb {
           void apply(Item _0);
+
+          default void invoke(Item _0) {
+            apply(_0);
+          }
         }
         """
       ]

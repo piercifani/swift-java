@@ -478,7 +478,7 @@ extension JNISwift2JavaGenerator {
         functionType: functionType,
         javaInterfaceName: javaClosureInterfaceName,
         javaBinaryName: javaBinaryName,
-        methodName: config.effectiveClosureMethodName,
+        methodName: "apply",
       )
 
       return NativeParameter(
@@ -514,10 +514,7 @@ extension JNISwift2JavaGenerator {
       }
 
       let result = try translateClosureResult(functionType.resultType)
-      let knownInterface = KnownJavaFunctionalInterface.find(
-        functionType,
-        closureMethodName: config.effectiveClosureMethodName
-      )
+      let knownInterface = KnownJavaFunctionalInterface.find(functionType)
       let interfaceJavaType =
         if let known = knownInterface {
           known.javaType
@@ -537,7 +534,7 @@ extension JNISwift2JavaGenerator {
           result: result,
           // The method to call is decided with the interface, from the Swift type: the JNI
           // signature alone can't tell `(Int) -> Int`'s own interface from `LongUnaryOperator`.
-          methodName: knownInterface?.method ?? config.effectiveClosureMethodName
+          methodName: knownInterface?.method ?? "apply"
         ),
         indirectConversion: nil,
         conversionCheck: nil

@@ -316,7 +316,6 @@ struct JNIJavaImplementedProtocolTests {
   func closureRequirement_passesTheSwiftClosureToJava() throws {
     var config = config
     config.javaCallbacksBindings = .jextract
-    config.closureMethodName = "invoke"
     let input = """
       public protocol Notifications {
         func onAuthError(_ handler: @escaping @Sendable (String, Int64?) -> Void)

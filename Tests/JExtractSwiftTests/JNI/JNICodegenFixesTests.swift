@@ -37,6 +37,10 @@ struct JNICodegenFixesTests {
           @FunctionalInterface
           public interface f {
             long apply(long _0);
+
+            default long invoke(long _0) {
+              return apply(_0);
+            }
           }
         }
         """,

@@ -316,7 +316,7 @@ extension JNISwift2JavaGenerator {
       p.print(
         """
         @JavaMethod
-        public func \(config.effectiveClosureMethodName)\(signature)
+        public func apply\(signature)
         """
       )
     }

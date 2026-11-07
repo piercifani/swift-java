@@ -225,12 +225,6 @@ struct KnownJavaFunctionalInterface: Sendable {
     find(parameters: methodSignature.parameterTypes, result: methodSignature.resultType)
   }
 
-  /// The JNI generator's lookup: a custom `closureMethodName` keeps every closure on its own interface, since a
-  /// `java.util.function` interface names its method `apply…`.
-  static func find(_ functionType: SwiftFunctionType, closureMethodName: String) -> KnownJavaFunctionalInterface? {
-    closureMethodName == "apply" ? find(functionType) : nil
-  }
-
   static func find(_ functionType: SwiftFunctionType) -> KnownJavaFunctionalInterface? {
     // An async closure's interface returns a `CompletableFuture`.
     if functionType.isEscaping || functionType.isAsync {

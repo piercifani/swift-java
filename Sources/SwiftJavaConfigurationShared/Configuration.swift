@@ -242,15 +242,6 @@ public struct Configuration: Codable {
   /// of platform types. Applied to the other reference types. Same requirements as `nullableAnnotation`.
   public var nonNullAnnotation: String?
 
-  /// The name of the single method of the functional interfaces jextract generates for Swift closures, `apply` by
-  /// default. With `invoke`, Kotlin calls a closure read from Swift as a function, `onTap()` instead of
-  /// `onTap.apply()`. With any name other than `apply`, closures such as `(Int64) -> Int64` also get their own
-  /// interface instead of a `java.util.function` one, so they can be called the same way. Only supported in `jni` mode.
-  public var closureMethodName: String?
-  public var effectiveClosureMethodName: String {
-    closureMethodName ?? "apply"
-  }
-
   /// If true, Foundation values cross as standard Java types instead of Swift-backed wrapper classes generated
   /// into each module: `URL` as `java.net.URI`, `Date` as `java.util.Date`, `Data` as `byte[]`, `Locale` as
   /// `java.util.Locale` and `TimeZone` as `java.util.TimeZone`. Values are copied when they cross, and a `Date` keeps

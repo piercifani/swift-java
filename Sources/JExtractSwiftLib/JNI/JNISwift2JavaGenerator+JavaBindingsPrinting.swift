@@ -1031,7 +1031,7 @@ extension JNISwift2JavaGenerator {
     // `LongUnaryOperator` but is translated to its own interface, which must then be printed.
     if translated.functionTypes.count == 1,
       let ty = translated.functionTypes.first,
-      KnownJavaFunctionalInterface.find(ty.swiftType, closureMethodName: config.effectiveClosureMethodName) != nil
+      KnownJavaFunctionalInterface.find(ty.swiftType) != nil
     {
       return
     }
@@ -1051,7 +1051,7 @@ extension JNISwift2JavaGenerator {
       // `Type.method` constructed, when the method takes no arguments.
       printer.print("private \(className)() {}")
       for functionType in translated.functionTypes {
-        if KnownJavaFunctionalInterface.find(functionType.swiftType, closureMethodName: config.effectiveClosureMethodName) != nil {
+        if KnownJavaFunctionalInterface.find(functionType.swiftType) != nil {
           continue
         }
 
@@ -1074,15 +1074,26 @@ extension JNISwift2JavaGenerator {
     _ functionType: TranslatedFunctionType,
   ) {
     let apiParams = functionType.parameters.map({ $0.parameter.renderParameter() })
+    let arguments = functionType.parameters.map(\.parameter.name).joined(separator: .comma)
+    let returnKeyword = functionType.result.javaType.isVoid ? "" : "return "
 
     printer.printJavadocComment(
       """
       Corresponds to the Swift closure parameter of type {@code \(functionType.swiftType)}.
       """
     )
+    // `invoke` lets Kotlin call the closure as `handler(x)`: Kotlin treats a Java method named `invoke`
+    // as the invoke operator. Kotlin lambdas still convert to the interface, since `apply` is its only
+    // abstract method.
     printer.print("@FunctionalInterface")
     printer.printBraceBlock("public interface \(functionType.name)") { printer in
-      printer.print("\(functionType.result.javaType) \(config.effectiveClosureMethodName)(\(apiParams.joined(separator: .comma)));")
+      printer.print("\(functionType.result.javaType) apply(\(apiParams.joined(separator: .comma)));")
+      printer.println()
+      printer.printBraceBlock(
+        "default \(functionType.result.javaType) invoke(\(apiParams.joined(separator: .comma)))"
+      ) { printer in
+        printer.print("\(returnKeyword)apply(\(arguments));")
+      }
       for nested in functionType.nestedFunctionTypes {
         printer.println()
         printJavaBindingWrapperFunctionTypeHelper(&printer, nested)
