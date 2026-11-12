@@ -289,7 +289,7 @@ extension JNISwift2JavaGenerator {
         guard case .function(let closure) = parameter.type else {
           return try self.translateParameter(parameter)
         }
-        guard let closureMethodName,
+        guard closureMethodName != nil,
           KnownJavaFunctionalInterface.find(closure) == nil
         else {
           throw JavaTranslationError.unsupportedSwiftType(parameter.type)
