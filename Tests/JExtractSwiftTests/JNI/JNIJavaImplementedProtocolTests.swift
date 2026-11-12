@@ -367,4 +367,70 @@ struct JNIJavaImplementedProtocolTests {
       ]
     )
   }
+
+  /// Optional results and `async` requirements' optional arguments, in the types the protocol's Java
+  /// interface declares them with: Java optionals, or nullable objects with `optionalsAsNullable` (which
+  /// `kotlinOutput` implies).
+  @Test(arguments: ["plain", "optionalsAsNullable", "kotlinOutput"])
+  func optionalResultsAndAsyncArguments(mode: String) throws {
+    var config = config
+    config.javaCallbacksBindings = .jextract
+    config.asyncFuncMode = .completableFuture
+    config.optionalsAsNullable = mode == "optionalsAsNullable" ? true : nil
+    config.kotlinOutput = mode == "kotlinOutput"
+    let input = """
+      public struct Item {}
+      public protocol Device {
+        func deviceId() -> String?
+        func count() -> Int64?
+        func item() -> Item?
+        func present(code: String?) async throws -> Int64
+      }
+      """
+    let expected =
+      mode == "plain"
+      ? [
+        "public func deviceId() -> JavaOptional<JavaString>!",
+        "public func count() -> JavaOptionalLong!",
+        "public func item(_ swiftArena: JavaSwiftArena?) -> JavaOptional<JavaItem>!",
+        "return Optional(javaOptional: javaInterface$.deviceId()).map {",
+        #"dynamicJavaMethodCall(methodName: "present", arguments: Optional(code.map {"#,
+      ]
+      : [
+        "public func deviceId() -> JavaString?",
+        "public func count() -> JavaLong?",
+        "public func item(_ swiftArena: JavaSwiftArena?) -> JavaItem?",
+        "return String.fromJavaObject($0.javaThis, in: $0.javaEnvironment)",
+        "return Int64.fromJavaObject($0.javaThis, in: $0.javaEnvironment)",
+        // With `kotlinOutput`, Kotlin's `suspend fun present` awaits the Java method `presentAsync`.
+        #"dynamicJavaMethodCall(methodName: "\#(mode == "kotlinOutput" ? "presentAsync" : "present")", arguments: code.flatMap {"#,
+      ]
+    try assertOutput(input: input, config: config, .jni, .swift, expectedChunks: expected)
+  }
+
+  /// With jextract's bindings and `foundationTypesAsJavaTypes`, Foundation values cross to a Java implementation
+  /// as the Java types its interface declares, `java.net.URI` for `URL`.
+  @Test
+  func foundationValues_crossAsJavaTypes() throws {
+    var config = config
+    config.javaCallbacksBindings = .jextract
+    config.foundationTypesAsJavaTypes = true
+    try assertOutput(
+      input: """
+        import Foundation
+        public protocol Preheater {
+          func preheat(urls: [URL])
+          func base() -> URL
+        }
+        """,
+      config: config,
+      .jni,
+      .swift,
+      expectedChunks: [
+        "public func preheat(_ p0: [URL])",
+        "public func base() -> URL",
+        "javaInterface$.preheat(urls)",
+      ]
+    )
+  }
 }

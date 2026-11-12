@@ -77,7 +77,7 @@ extension JNISwift2JavaGenerator {
         continue
       }
       var parameters = signature.parameters.enumerated().map { idx, parameter in
-        "_ p\(idx): \(wrapJavaTypeName(parameter.type, isResult: false))"
+        "_ p\(idx): \(wrapJavaTypeName(parameter.type, isResult: false, nullable: config.effectiveOptionalsAsNullable))"
       }
       // A closure parameter crosses as its interface, which Java makes of a Swift closure.
       for (idx, parameter) in signature.parameters.enumerated() {
@@ -112,7 +112,7 @@ extension JNISwift2JavaGenerator {
       }
       let throwsClause = signature.isThrowing ? " throws" : ""
       let resultClause =
-        signature.result.type.isVoid ? "" : " -> \(wrapJavaTypeName(signature.result.type, isResult: true))"
+        signature.result.type.isVoid ? "" : " -> \(wrapJavaTypeName(signature.result.type, isResult: true, nullable: config.effectiveOptionalsAsNullable, optionalResult: true))"
       methods.append(
         """
         @JavaMethod("\(translatedDecl.name)")
@@ -186,7 +186,10 @@ extension JNISwift2JavaGenerator {
 
   /// The Swift spelling of a closure parameter or result in the `@JavaInterface` wrapper.
   /// Jextracted types are passed as their Java class, through its JavaKit wrapper.
-  private func wrapJavaTypeName(_ type: SwiftType, isResult: Bool) -> String {
+  /// `nullable`: optionals cross as nullable Java objects, as the Java method declares them (`optionalsAsNullable`
+  /// for protocols, `kotlinOutput` for closures). `optionalResult`: an optional result is typed as Java returns it,
+  /// as protocol requirements' are.
+  private func wrapJavaTypeName(_ type: SwiftType, isResult: Bool, nullable: Bool, optionalResult: Bool = false) -> String {
     if type.isSwiftError {
       return isResult ? "Throwable!" : "Throwable?"
     }
@@ -204,8 +207,8 @@ extension JNISwift2JavaGenerator {
     if let nominal = jextractedNominal(type) {
       return nominal.generatedJavaClassMacroName + (isResult ? "!" : "?")
     }
-    // With `kotlinOutput` an optional crosses as a nullable Java object.
-    if !isResult, config.effectiveKotlinOutput, let wrapped = optionalWrapped(type) {
+    // An optional crosses as a nullable Java object.
+    if !isResult, nullable, let wrapped = optionalWrapped(type) {
       if let boxClass = wrapped.javaBoxClassName {
         return "\(boxClass)?"
       }
@@ -231,6 +234,27 @@ extension JNISwift2JavaGenerator {
       let nominal = jextractedNominal(element)
     {
       return "[\(nominal.generatedJavaClassMacroName)?]"
+    }
+    // An optional result is a nullable Java object, or a Java `Optional`.
+    if isResult, optionalResult, let wrapped = optionalWrapped(type) {
+      if nullable {
+        if let boxClass = wrapped.javaBoxClassName {
+          return "\(boxClass)?"
+        }
+        if let nominal = jextractedNominal(wrapped) {
+          return "\(nominal.generatedJavaClassMacroName)?"
+        }
+      } else if let nominal = jextractedNominal(wrapped) {
+        return "JavaOptional<\(nominal.generatedJavaClassMacroName)>!"
+      } else if case .nominal(let nominal) = wrapped {
+        switch nominal.nominalTypeDecl.knownTypeKind {
+        case .string: return "JavaOptional<JavaString>!"
+        case .double: return "JavaOptionalDouble!"
+        case .int32: return "JavaOptionalInt!"
+        case .int64: return "JavaOptionalLong!"
+        default: break
+        }
+      }
     }
     // An optional array is returned in a Java `Optional`, which holds the array as an object.
     if isResult, let wrapped = optionalWrapped(type), case .nominal(let array) = wrapped,
@@ -329,7 +353,7 @@ extension JNISwift2JavaGenerator {
       if case .function = param.type {
         return "_ \(name): \(interface)_\(name)?"
       }
-      return "_ \(name): \(wrapJavaTypeName(param.type, isResult: false))"
+      return "_ \(name): \(wrapJavaTypeName(param.type, isResult: false, nullable: config.effectiveKotlinOutput))"
     }
     let paramList = "(\(params.joined(separator: .comma)))"
 
@@ -340,7 +364,7 @@ extension JNISwift2JavaGenerator {
     if type.resultType.isVoid {
       return paramList
     } else {
-      return "\(paramList) -> \(wrapJavaTypeName(type.resultType, isResult: true))"
+      return "\(paramList) -> \(wrapJavaTypeName(type.resultType, isResult: true, nullable: config.effectiveKotlinOutput))"
     }
   }
 }

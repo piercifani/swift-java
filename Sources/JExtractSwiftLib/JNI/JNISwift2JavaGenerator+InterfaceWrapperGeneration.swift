@@ -46,7 +46,11 @@ extension JNISwift2JavaGenerator {
         )
         let translator = JavaInterfaceProtocolWrapperGenerator(
           asyncFuncMode: config.effectiveAsyncFuncMode,
-          optionalsAsNullable: config.effectiveKotlinOutput,
+          // jextract's bindings take Foundation values as the Java types they cross as; wrap-java's map them
+          // on their own terms.
+          foundationTypesAsJavaTypes: config.effectiveFoundationTypesAsJavaTypes && !usesWrapJavaBindings,
+          // As the protocol's Java interface declares its optionals.
+          optionalsAsNullable: config.effectiveOptionalsAsNullable,
           javaMapObjectBridge: nativeTranslation.javaMapObjectBridge,
           closureMethodName: usesWrapJavaBindings ? nil : "apply"
         )
@@ -380,13 +384,9 @@ extension JNISwift2JavaGenerator {
       }
       switch elementType {
       case .nominal(let nominalType):
-        if let knownType = nominalType.nominalTypeDecl.knownTypeKind {
-          switch knownType {
-          case .optional, .array, .dictionary, .set:
-            throw JavaTranslationError.unsupportedSwiftType(known: .array(elementType))
-          default:
-            break
-          }
+        // Other than the values that cross as they are, only jextracted types have a Java class.
+        if nominalType.nominalTypeDecl.knownTypeKind != nil {
+          throw JavaTranslationError.unsupportedSwiftType(known: .array(elementType))
         }
 
         // We assume this is a JExtracted type
@@ -525,6 +525,13 @@ extension JNISwift2JavaGenerator {
         )
         return .map(.fromJavaOptional(.placeholder), body: .map(javaArray, body: elementConversion))
       }
+      // With `kotlinOutput` Java returns a nullable object: a boxed value, or a jextracted type's Java object.
+      if optionalsAsNullable {
+        if wrappedType.javaBoxClassName != nil, case .nominal(let nominal) = wrappedType {
+          return .map(.placeholder, body: .unboxed(.placeholder, swiftType: nominal.nominalTypeDecl.qualifiedName))
+        }
+        return .map(.placeholder, body: try translateResult(type: wrappedType, methodName: methodName, allowNilForObjects: true))
+      }
       // The `fromJavaOptional` will handle the nullability
       let wrappedConversion = try translateResult(
         type: wrappedType,
@@ -588,6 +595,9 @@ enum UpcallConversionStep {
 
   /// A string or number as its boxed Java object, such as `JavaLong`.
   indirect case boxed(UpcallConversionStep, javaClass: String)
+
+  /// A boxed Java value, such as a `JavaLong`, as the Swift value `swiftType`.
+  indirect case unboxed(UpcallConversionStep, swiftType: String)
 
   /// A Java array held as a plain Java object, as the Swift array of its elements' Java objects.
   indirect case javaObjectArray(UpcallConversionStep, elementJavaClass: String)
@@ -720,6 +730,10 @@ enum UpcallConversionStep {
         """
       )
       return "try! JavaClass<\(interfaceStruct)>(environment: JavaVirtualMachine.shared().environment())._\(name)FromSwiftClosure(\(name)Handle$)"
+
+    case .unboxed(let inner, let swiftType):
+      let inner = inner.render(&printer, placeholder)
+      return "\(swiftType).fromJavaObject(\(inner).javaThis, in: \(inner).javaEnvironment)"
 
     case .boxed(let inner, let javaClass):
       let inner = inner.render(&printer, placeholder)

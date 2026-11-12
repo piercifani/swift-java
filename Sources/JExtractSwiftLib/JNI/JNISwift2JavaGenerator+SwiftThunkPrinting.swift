@@ -392,7 +392,12 @@ extension JNISwift2JavaGenerator {
       printer.printBraceBlock("let future$ = \(tryKeyword) environment$.withLocalFrame(capacity: \(estimatedRefCount))") { printer in
         printCurrentThreadJavaInterface(&printer, wrapper)
         var upcallArguments = zip(signature.parameters, function.parameterConversions).map { param, conversion in
-          conversion.render(&printer, param.parameterName!)
+          let argument = conversion.render(&printer, param.parameterName!)
+          // A `JavaOptional` is a `JavaValue` only as an optional, as for async closures.
+          if case .toJavaOptional = conversion {
+            return "Optional(\(argument))"
+          }
+          return argument
         }
         if translatedDecl.translatedFunctionSignature.requiresSwiftArena {
           // `JavaValue` is provided for optional Java objects, as wrap-java's parameters are.
@@ -401,7 +406,7 @@ extension JNISwift2JavaGenerator {
         // wrap-java doesn't bind methods returning a generic `CompletableFuture<T>`, so call it dynamically.
         let arguments = upcallArguments.isEmpty ? "" : "arguments: \(upcallArguments.joined(separator: .comma)), "
         printer.print(
-          "return try javaInterface$.dynamicJavaMethodCall(methodName: \"\(function.swiftFunctionName)\", \(arguments)resultType: JavaCompletableFuture?.self)"
+          "return try javaInterface$.dynamicJavaMethodCall(methodName: \"\(translatedDecl.name)\", \(arguments)resultType: JavaCompletableFuture?.self)"
         )
       }
       printer.printBraceBlock("guard let future$ else") { printer in
