@@ -642,7 +642,7 @@ extension JNISwift2JavaGenerator {
       return
     }
 
-    printAllSwiftFunctionHelperClasses(&printer, decl)
+    printAllSwiftFunctionHelperClasses(&printer, decl, translatedDecl)
 
     printCDecl(
       &printer,
@@ -660,14 +660,13 @@ extension JNISwift2JavaGenerator {
   private func printAllSwiftFunctionHelperClasses(
     _ printer: inout SwiftPrinter,
     _ decl: ExtractedFunc,
+    _ translatedDecl: TranslatedFunctionDecl,
   ) {
     // Emit the `@JavaInterface` Swift wrappers for any `@escaping` closure parameters.
-    if let translatedDecl = translatedDecl(for: decl) {
-      printEscapingClosureSwiftFunctionHelperClasses(&printer, translatedDecl)
-    }
+    printEscapingClosureSwiftFunctionHelperClasses(&printer, translatedDecl)
 
     // Emit the `@JavaInterface` Swift wrappers any existential / protocol parameters.
-    printProtocolParameterSwiftFunctionHelperClasses(&printer, decl)
+    printProtocolParameterSwiftFunctionHelperClasses(&printer, decl, translatedDecl)
   }
 
   /// Emits Swift wrapper types for any parameter type that is a protocol
@@ -675,37 +674,39 @@ extension JNISwift2JavaGenerator {
   private func printProtocolParameterSwiftFunctionHelperClasses(
     _ printer: inout SwiftPrinter,
     _ decl: ExtractedFunc,
+    _ translatedDecl: TranslatedFunctionDecl,
   ) {
-    let protocolParameters = decl.functionSignature.parameters.compactMap { parameter in
+    let parameters = zip(decl.functionSignature.parameters, translatedDecl.translatedFunctionSignature.parameters)
+    let protocolParameters = parameters.compactMap { parameter, translatedParameter in
       if let concreteType = parameter.type.typeIn(
         genericParameters: decl.functionSignature.genericParameters,
         genericRequirements: decl.functionSignature.genericRequirements,
       ) {
-        return (parameter, concreteType)
+        return (translatedParameter.parameter.name, concreteType)
       }
 
       switch parameter.type {
       case .opaque(let protocolType),
         .existential(let protocolType):
-        return (parameter, protocolType)
+        return (translatedParameter.parameter.name, protocolType)
 
       default:
         return nil
       }
-    }.map { parameter, protocolType in
+    }.map { parameterName, protocolType in
       // We flatten any composite types
       switch protocolType {
       case .composite(let protocols):
-        return (parameter, protocols)
+        return (parameterName, protocols)
 
       default:
-        return (parameter, [protocolType])
+        return (parameterName, [protocolType])
       }
     }
 
     // For each parameter that is a generic or a protocol,
     // we generate a Swift class that conforms to all of those.
-    for (parameter, protocolTypes) in protocolParameters {
+    for (parameterName, protocolTypes) in protocolParameters {
       // A protocol has a Swift wrapper if it was extracted here with one, or comes from a dependency
       // extracted with Java callbacks. Either way the names follow from the protocol declaration.
       let protocolWrappers: [SwiftNominalTypeDeclaration] = protocolTypes.compactMap { protocolType in
@@ -731,14 +732,10 @@ extension JNISwift2JavaGenerator {
         continue
       }
 
-      guard let parameterName = parameter.parameterName else {
-        // TODO: Throw
-        fatalError()
-      }
       let swiftClassName = JNISwift2JavaGenerator.protocolParameterWrapperClassName(
-        methodName: decl.name,
+        methodName: translatedDecl.name,
         parameterName: parameterName,
-        parentName: decl.parentType?.asNominalType?.nominalTypeDecl.qualifiedTypeName ?? SwiftQualifiedTypeName(swiftModuleName),
+        parentName: translatedDecl.parentName,
       )
       let implementingProtocols = protocolWrappers.map(\.javaInterfaceSwiftProtocolWrapperName).joined(separator: .comma)
       guard printedProtocolParameterWrappers.insert(swiftClassName).inserted else {
