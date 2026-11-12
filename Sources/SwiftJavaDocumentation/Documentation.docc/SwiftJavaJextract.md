@@ -94,6 +94,16 @@ An extension's members are exported only when the extended type is exported too.
 Declarations that aren't exported are never translated, so they can't produce skipped-declaration
 warnings or fail a build that uses `failOnSkippedDeclarations`.
 
+### Main actor in Java-hosted processes
+
+Swift libraries may use the main actor in their public APIs or internally.
+When calling Swift from a Java-hosted process, you may need to integrate
+Swift's main executor with the host's event loop.
+
+Without appropriate integration, work scheduled on the main actor may not
+execute, leaving asynchronous calls incomplete. The required integration
+varies by platform and host configuration. For Android, see <doc:Android>.
+
 ## See Also
 
 - <doc:FeaturesJextract>
