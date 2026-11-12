@@ -174,7 +174,7 @@ extension JNISwift2JavaGenerator {
 
   private func renderEscapingClosureApplySignature(_ type: SwiftFunctionType) -> String {
     let params = type.parameters.enumerated().map { idx, param -> String in
-      let name = param.parameterName ?? "_\(idx)"
+      let name = (param.parameterName ?? "_\(idx)").javaSafeIdentifier
       return "_ \(name): \(wrapJavaTypeName(param.type, isResult: false))"
     }
     let paramList = "(\(params.joined(separator: .comma)))"
