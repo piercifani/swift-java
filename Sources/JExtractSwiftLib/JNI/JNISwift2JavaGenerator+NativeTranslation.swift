@@ -437,7 +437,7 @@ extension JNISwift2JavaGenerator {
     ) throws -> NativeParameter {
       var parameters = [NativeParameter]()
       for (i, parameter) in functionType.parameters.enumerated() {
-        let closureParamName = parameter.parameterName ?? "_\(i)"
+        let closureParamName = (parameter.parameterName ?? "_\(i)").javaSafeIdentifier
         let closureParameter = try translateClosureParameter(
           parameter.type,
           parameterName: closureParamName
@@ -1741,7 +1741,7 @@ extension JNISwift2JavaGenerator {
 
         let fn = syntheticFunction.functionType
         let parameterNames = fn.parameters.enumerated().map { idx, param in
-          param.parameterName ?? "_\(idx)"
+          (param.parameterName ?? "_\(idx)").javaSafeIdentifier
         }
         let closureParameters = parameterNames.joined(separator: .comma)
         let isVoid = fn.resultType.isVoid
